@@ -1,0 +1,30 @@
+import express from 'express';
+import {
+  getAllAboutUsSections,
+  getAboutUsSection,
+  createOrUpdateAboutUsSection,
+  updateAboutUsSection,
+  deleteAboutUsSection,
+  getAboutUsPageData,
+  addTeamMember,
+  updateTeamMember,
+  deleteTeamMember
+} from '../controllers/aboutUsController.js';
+import { authenticate } from '../middleware/auth.js';
+
+const router = express.Router();
+
+
+router.get('/', getAllAboutUsSections);
+router.get('/page-data', getAboutUsPageData);
+router.get('/:sectionType', getAboutUsSection);
+
+router.post('/', authenticate, createOrUpdateAboutUsSection);
+router.put('/:sectionType', authenticate, updateAboutUsSection);
+router.delete('/:sectionType', authenticate, deleteAboutUsSection);
+
+router.post('/:sectionType/team-members', authenticate, addTeamMember);
+router.put('/:sectionType/team-members/:memberId', authenticate, updateTeamMember);
+router.delete('/:sectionType/team-members/:memberId', authenticate, deleteTeamMember);
+
+export default router;

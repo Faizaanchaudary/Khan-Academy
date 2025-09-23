@@ -1,0 +1,54 @@
+{
+  "name": "SDK-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "nodemon index.js",
+    "dev": "nodemon index.js",
+    "test": "node test-firebase.js",
+    "test:api": "node test-firebase.js",
+    "token": "node simple-token-generator.js",
+    "firebase-token": "node getToken.js",
+    "seed:branches": "node scripts/seedBranches.js",
+    "seed:questions": "node scripts/seedQuestionsWithLevels.js",
+    "seed:achievements": "node scripts/seedAchievements.js",
+    "seed:plans": "node scripts/seedPaymentPlans.js",
+    "setup:payments": "node scripts/setupPaymentTesting.js",
+    "test:achievements": "node scripts/testAchievementProgress.js",
+    "debug:achievements": "node scripts/debugAchievementProgress.js",
+    "test:level-progression": "node scripts/testLevelProgression.js",
+    "test:payments": "node scripts/testPaymentSystem.js"
+  },
+  "keywords": [
+    "chiropractor",
+    "healthcare",
+    "backend",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "SDK Backend API with Firebase Authentication",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@paypal/checkout-server-sdk": "^1.0.3",
+    "axios": "^1.5.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^6.10.0",
+    "express-validator": "^7.0.1",
+    "firebase-admin": "^11.10.1",
+    "helmet": "^7.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-client": "^2.0.5",
+    "mongoose": "^7.5.0",
+    "nodemailer": "^7.0.6",
+    "paypal-rest-sdk": "^1.8.1",
+    "stripe": "^18.5.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
