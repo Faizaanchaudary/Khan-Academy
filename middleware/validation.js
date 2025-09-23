@@ -1,0 +1,263 @@
+import { body, validationResult } from 'express-validator';
+
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: errors.array()
+    });
+  }
+  next();
+};
+
+const validateUserRegistration = [
+  body('firstName')
+    .trim()
+    .notEmpty()
+    .withMessage('First name is required')
+    .isLength({ min: 2, max: 50 })
+    .withMessage('First name must be between 2 and 50 characters'),
+  
+  body('lastName')
+    .trim()
+    .notEmpty()
+    .withMessage('Last name is required')
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Last name must be between 2 and 50 characters'),
+  
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email address'),
+  
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
+  
+  body('confirmPassword')
+    .custom((value, { req }) => {
+      if (value !== req.body.password) {
+        throw new Error('Password confirmation does not match password');
+      }
+      return true;
+    }),
+  
+  handleValidationErrors
+];
+
+const validateUserLogin = [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email address'),
+  
+  body('password')
+    .notEmpty()
+    .withMessage('Password is required'),
+  
+  handleValidationErrors
+];
+
+const validateProfileUpdate = [
+  body('firstName')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('First name must be between 2 and 50 characters'),
+  
+  body('lastName')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Last name must be between 2 and 50 characters'),
+  
+  body('phoneNumber')
+    .optional()
+    .isMobilePhone()
+    .withMessage('Please provide a valid phone number'),
+  
+  body('dateOfBirth')
+    .optional()
+    .isISO8601()
+    .withMessage('Please provide a valid date of birth'),
+  
+  handleValidationErrors
+];
+
+const validatePasswordResetRequest = [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  
+  handleValidationErrors
+];
+
+const validateOTPVerification = [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  
+  body('otp')
+    .isLength({ min: 4, max: 4 })
+    .withMessage('Verification code must be exactly 4 digits')
+    .isNumeric()
+    .withMessage('Verification code must contain only numbers'),
+  
+  handleValidationErrors
+];
+
+const validatePasswordReset = [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  
+  body('newPassword')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
+  
+  body('confirmPassword')
+    .custom((value, { req }) => {
+      if (value !== req.body.newPassword) {
+        throw new Error('Password confirmation does not match new password');
+      }
+      return true;
+    }),
+  
+  handleValidationErrors
+];
+
+const validatePatientCreation = [
+  body('fullName')
+    .trim()
+    .notEmpty()
+    .withMessage('Full name is required')
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Full name must be between 2 and 100 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('Full name can only contain letters and spaces'),
+  
+  body('gender')
+    .isIn(['Male', 'Female', 'Other'])
+    .withMessage('Gender must be Male, Female, or Other'),
+  
+  body('dateOfBirth')
+    .isISO8601()
+    .withMessage('Please provide a valid date of birth')
+    .custom((value) => {
+      const birthDate = new Date(value);
+      const today = new Date();
+      if (birthDate > today) {
+        throw new Error('Date of birth cannot be in the future');
+      }
+      const age = today.getFullYear() - birthDate.getFullYear();
+      if (age > 150) {
+        throw new Error('Please provide a valid date of birth');
+      }
+      return true;
+    }),
+  
+  handleValidationErrors
+];
+
+const validatePatientUpdate = [
+  body('fullName')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Full name must be between 2 and 100 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('Full name can only contain letters and spaces'),
+  
+  body('gender')
+    .optional()
+    .isIn(['Male', 'Female', 'Other'])
+    .withMessage('Gender must be Male, Female, or Other'),
+  
+  body('dateOfBirth')
+    .optional()
+    .isISO8601()
+    .withMessage('Please provide a valid date of birth')
+    .custom((value) => {
+      const birthDate = new Date(value);
+      const today = new Date();
+      if (birthDate > today) {
+        throw new Error('Date of birth cannot be in the future');
+      }
+      const age = today.getFullYear() - birthDate.getFullYear();
+      if (age > 150) {
+        throw new Error('Please provide a valid date of birth');
+      }
+      return true;
+    }),
+  
+  handleValidationErrors
+];
+
+const validateInvitationGeneration = [
+  body('email')
+    .optional()
+    .isEmail()
+    .withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  
+  body('expiresInDays')
+    .optional()
+    .isInt({ min: 1, max: 365 })
+    .withMessage('Expiration days must be between 1 and 365'),
+  
+  body('metadata')
+    .optional()
+    .isObject()
+    .withMessage('Metadata must be an object'),
+  
+  handleValidationErrors
+];
+
+const validateReviewSubmission = [
+  body('rating')
+    .isInt({ min: 1, max: 5 })
+    .withMessage('Rating must be between 1 and 5'),
+  
+  body('title')
+    .trim()
+    .notEmpty()
+    .withMessage('Title is required')
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Title must be between 2 and 100 characters'),
+  
+  body('comment')
+    .trim()
+    .notEmpty()
+    .withMessage('Comment is required')
+    .isLength({ min: 10, max: 1000 })
+    .withMessage('Comment must be between 10 and 1000 characters'),
+  
+  body('adminId')
+    .notEmpty()
+    .withMessage('Admin ID is required')
+    .isMongoId()
+    .withMessage('Invalid admin ID format'),
+  
+  handleValidationErrors
+];
+
+export {
+  handleValidationErrors,
+  validateUserRegistration,
+  validateUserLogin,
+  validateProfileUpdate,
+  validatePasswordResetRequest,
+  validateOTPVerification,
+  validatePasswordReset,
+  validatePatientCreation,
+  validatePatientUpdate,
+  validateInvitationGeneration,
+  validateReviewSubmission
+};
