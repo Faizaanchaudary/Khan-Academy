@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import UserLevel from '../models/UserLevel.js';
 import UserSubscription from '../models/UserSubscription.js';
 import Plan from '../models/Plan.js';
+import Branch from '../models/Branch.js';
 import TokenBlacklist from '../models/TokenBlacklist.js';
 import { admin } from '../config/firebase.js';
 import { sendPasswordResetEmail } from '../config/email.js';
@@ -117,13 +118,32 @@ export const login = async (req, res) => {
     await user.save();
 
     // Fetch user level and subscription data
-    const [userLevels, userSubscription] = await Promise.all([
+    let [userLevels, userSubscription] = await Promise.all([
       UserLevel.find({ userId: user._id }).populate('branchId', 'name'),
       UserSubscription.findOne({ userId: user._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features')
     ]);
 
+    // If no user levels exist, create default levels for all branches
+    if (userLevels.length === 0) {
+      const branches = await Branch.find();
+      const defaultLevels = branches.map(branch => ({
+        userId: user._id,
+        branchId: branch._id,
+        category: branch.category,
+        currentLevel: 1,
+        completedLevels: [],
+        totalQuestionsAnswered: 0,
+        totalCorrectAnswers: 0,
+        isUnlocked: true
+      }));
+      
+      await UserLevel.insertMany(defaultLevels);
+      userLevels = await UserLevel.find({ userId: user._id }).populate('branchId', 'name');
+    }
+
     const userResponse = user.toObject();
     delete userResponse.password;
+    delete userResponse.resetPasswordOTP;
 
     // Prepare user level data
     const userLevelData = userLevels.map(level => ({
