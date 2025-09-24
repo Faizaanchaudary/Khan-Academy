@@ -15,7 +15,7 @@ const generateToken = (userId) => {
 
 export const register = async (req, res) => {
   try {
-    const { firstName, lastName, email, password } = req.body;
+    const { firstName, lastName, email, password  , role} = req.body;
 
     const normalizedEmail = normalizeEmail(email);
   
@@ -35,7 +35,8 @@ export const register = async (req, res) => {
       lastName,
       email: normalizedEmail,
       password: hashedPassword,
-      provider: 'email'
+      provider: 'email' ,
+      role ,
     });
 
     const token = generateToken(user._id);
