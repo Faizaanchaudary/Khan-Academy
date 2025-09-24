@@ -31,6 +31,12 @@ const validateUserRegistration = [
       return true;
     }),
   
+  body('role')
+    .notEmpty()
+    .withMessage('Role is required')
+    .isIn(['admin', 'student'])
+    .withMessage('Role must be either admin or student'),
+  
   handleValidationErrors
 ];
 

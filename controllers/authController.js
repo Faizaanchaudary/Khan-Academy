@@ -19,6 +19,22 @@ export const register = async (req, res) => {
 
     const normalizedEmail = normalizeEmail(email);
 
+    // Validate role is provided
+    if (!role) {
+      return res.status(400).json({
+        success: false,
+        message: 'Role is required'
+      });
+    }
+
+    // Validate role value
+    if (!['admin', 'student'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Role must be either admin or student'
+      });
+    }
+
     // Validate password confirmation
     if (password !== confirmPassword) {
       return res.status(400).json({
