@@ -15,9 +15,17 @@ const generateToken = (userId) => {
 
 export const register = async (req, res) => {
   try {
-    const { firstName, lastName, email, password  , role} = req.body;
+    const { firstName, lastName, email, password, confirmPassword, role} = req.body;
 
     const normalizedEmail = normalizeEmail(email);
+
+    // Validate password confirmation
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password confirmation does not match'
+      });
+    }
   
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
