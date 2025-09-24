@@ -2,6 +2,9 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import jwksClient from 'jwks-client';
 import User from '../models/User.js';
+import UserLevel from '../models/UserLevel.js';
+import UserSubscription from '../models/UserSubscription.js';
+import Plan from '../models/Plan.js';
 import TokenBlacklist from '../models/TokenBlacklist.js';
 import { admin } from '../config/firebase.js';
 import { sendPasswordResetEmail } from '../config/email.js';
@@ -113,14 +116,57 @@ export const login = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
+    // Fetch user level and subscription data
+    const [userLevels, userSubscription] = await Promise.all([
+      UserLevel.find({ userId: user._id }).populate('branchId', 'name'),
+      UserSubscription.findOne({ userId: user._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features')
+    ]);
+
     const userResponse = user.toObject();
     delete userResponse.password;
+
+    // Prepare user level data
+    const userLevelData = userLevels.map(level => ({
+      branchId: level.branchId,
+      category: level.category,
+      currentLevel: level.currentLevel,
+      completedLevels: level.completedLevels,
+      totalQuestionsAnswered: level.totalQuestionsAnswered,
+      totalCorrectAnswers: level.totalCorrectAnswers,
+      isUnlocked: level.isUnlocked
+    }));
+
+    // Prepare subscription data
+    const subscriptionData = userSubscription ? {
+      planId: userSubscription.planId,
+      status: userSubscription.status,
+      startDate: userSubscription.startDate,
+      endDate: userSubscription.endDate,
+      trialEndDate: userSubscription.trialEndDate,
+      isTrialActive: userSubscription.isTrialActive,
+      autoRenew: userSubscription.autoRenew,
+      nextBillingDate: userSubscription.nextBillingDate,
+      plan: {
+        name: userSubscription.planId?.name,
+        tagline: userSubscription.planId?.tagline,
+        price: userSubscription.planId?.price,
+        currency: userSubscription.planId?.currency,
+        billingCycle: userSubscription.planId?.billingCycle,
+        features: userSubscription.planId?.features
+      }
+    } : null;
 
     res.json({
       success: true,
       message: 'Login successful',
       data: {
-        user: userResponse,
+        user: {
+          ...userResponse,
+          firstName: userResponse.firstName || null,
+          lastName: userResponse.lastName || null
+        },
+        userLevels: userLevelData,
+        subscription: subscriptionData,
         token
       }
     });
