@@ -15,7 +15,7 @@ const generateToken = (userId) => {
 
 export const register = async (req, res) => {
   try {
-    const { firstName, lastName, email, password, confirmPassword, role} = req.body;
+    const { email, password, confirmPassword, role} = req.body;
 
     const normalizedEmail = normalizeEmail(email);
 
@@ -39,8 +39,6 @@ export const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const user = await User.create({
-      firstName,
-      lastName,
       email: normalizedEmail,
       password: hashedPassword,
       provider: 'email' ,
