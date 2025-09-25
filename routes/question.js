@@ -20,7 +20,7 @@ router.get('/', getAllQuestions);
 router.get('/category/:category', getQuestionsByCategory);
 router.get('/branch/:branchId', getQuestionsByBranch);
 router.get('/:questionId', getQuestionById);
-router.post('/', authenticate, createQuestion);
+router.post('/', createQuestion);
 router.put('/:questionId', authenticate, updateQuestion);
 router.delete('/:questionId', authenticate, deleteQuestion);
 router.post('/:questionId/answer', authenticate, submitAnswer);
