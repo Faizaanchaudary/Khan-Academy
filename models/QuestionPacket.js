@@ -34,10 +34,10 @@ const questionPacketSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
-  subject: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Branch',
+  subjectCategory: {
+    type: String,
     required: true,
+    enum: ['Maths', 'Reading & Writing'],
     index: true
   },
   difficultyLevel: {
@@ -56,7 +56,7 @@ const questionPacketSchema = new mongoose.Schema({
     type: String,
     required: true,
     enum: ['Active', 'Draft'],
-    default: 'Draft',
+    default: 'Active',
     index: true
   },
   questions: {
@@ -83,8 +83,8 @@ questionPacketSchema.pre('save', function(next) {
   next();
 });
 
-questionPacketSchema.index({ subject: 1, difficultyLevel: 1 });
-questionPacketSchema.index({ subject: 1, status: 1 });
+questionPacketSchema.index({ subjectCategory: 1, difficultyLevel: 1 });
+questionPacketSchema.index({ subjectCategory: 1, status: 1 });
 questionPacketSchema.index({ status: 1 });
 
 const QuestionPacket = mongoose.model('QuestionPacket', questionPacketSchema);

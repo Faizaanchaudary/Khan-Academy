@@ -58,8 +58,22 @@ export const createStripePaymentIntent = async (req, res) => {
       status: { $in: ['active', 'trial'] }
     });
 
+    // Allow upgrade from free trial to paid plan
     if (existingSubscription) {
-      return sendError(res, 'User already has an active subscription', 400);
+      // Check if user is trying to upgrade from free trial to paid plan
+      const isUpgradingFromFreeTrial = existingSubscription.paymentMethod === 'free' && 
+                                       existingSubscription.planId.toString() !== planId && 
+                                       plan.price > 0;
+      
+      if (!isUpgradingFromFreeTrial) {
+        return sendError(res, 'User already has an active subscription', 400);
+      }
+      
+      // Cancel the existing free trial subscription
+      existingSubscription.status = 'cancelled';
+      existingSubscription.cancelledAt = new Date();
+      existingSubscription.cancellationReason = 'Upgraded to paid plan';
+      await existingSubscription.save();
     }
 
     // Calculate pricing

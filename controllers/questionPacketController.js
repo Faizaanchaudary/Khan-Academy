@@ -6,7 +6,7 @@ import UserAnswer from '../models/UserAnswer.js';
 
 export const createQuestionPacket = async (req, res) => {
   try {
-    const { packetTitle, packetDescription, subject, difficultyLevel, questionType, questions } = req.body;
+    const { packetTitle, packetDescription, subjectCategory, difficultyLevel, questionType, questions } = req.body;
 
 
     if (!questions || questions.length !== 10) {
@@ -36,7 +36,7 @@ export const createQuestionPacket = async (req, res) => {
     const questionPacket = new QuestionPacket({
       packetTitle,
       packetDescription,
-      subject,
+      subjectCategory,
       difficultyLevel,
       questionType,
       questions
@@ -195,7 +195,6 @@ export const submitQuestionPacketAnswers = async (req, res) => {
 
 
     const questionPacket = await QuestionPacket.findById(questionPacketId)
-      .populate('subject', 'name category');
     
     if (!questionPacket) {
       return res.status(404).json({
@@ -239,8 +238,8 @@ export const submitQuestionPacketAnswers = async (req, res) => {
     const questionPacketAnswer = new QuestionPacketAnswer({
       userId,
       questionPacketId,
-      branchId: questionPacket.subject._id,
-      category: questionPacket.subject.category,
+      branchId: null, // No longer using branch reference
+      category: questionPacket.subjectCategory,
       answers: answerResults,
       correctAnswers,
       totalQuestions: 10,
@@ -314,7 +313,6 @@ export const answerIndividualQuestion = async (req, res) => {
 
 
     const questionPacket = await QuestionPacket.findById(questionPacketId)
-      .populate('subject', 'name category');
     
     if (!questionPacket) {
       return res.status(404).json({
@@ -363,8 +361,8 @@ export const answerIndividualQuestion = async (req, res) => {
       userAnswerRecord = new UserAnswer({
         userId,
         questionId: `${questionPacketId}_${questionIndex}`,
-        branchId: questionPacket.subject._id,
-        category: questionPacket.subject.category,
+        branchId: null, // No longer using branch reference
+        category: questionPacket.subjectCategory,
         selectedOptionIndex: optionIndex,
         isCorrect,
         pointsEarned: isCorrect ? 1 : 0
@@ -454,7 +452,6 @@ export const getQuestionPacketProgress = async (req, res) => {
 
 
     const questionPacket = await QuestionPacket.findById(questionPacketId)
-      .populate('subject', 'name category');
     
     if (!questionPacket) {
       return res.status(404).json({
