@@ -69,6 +69,53 @@ export const register = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
+    // Automatically create free subscription for student users
+    if (role === 'student') {
+      try {
+        // Find the free plan
+        const freePlan = await Plan.findOne({ price: 0, isActive: true });
+        
+        if (freePlan) {
+          const now = new Date();
+          const trialEndDate = new Date(now.getTime() + (freePlan.trialDays * 24 * 60 * 60 * 1000)); // Use plan's trial days
+          const endDate = new Date(now.getTime() + (freePlan.trialDays * 24 * 60 * 60 * 1000)); // Same as trial end for free plan
+
+          const subscription = new UserSubscription({
+            userId: user._id,
+            planId: freePlan._id,
+            status: 'trial', // Set as trial since it's a free trial
+            startDate: now,
+            endDate: endDate,
+            trialEndDate: trialEndDate,
+            isTrialActive: true, // Set as active trial
+            paymentMethod: 'free',
+            billingInfo: {
+              firstName: user.firstName || 'User',
+              lastName: user.lastName || 'User',
+              country: 'US',
+              phoneNumber: user.phoneNumber || '',
+              isCompany: false
+            },
+            pricing: {
+              subtotal: 0,
+              amountDueNow: 0,
+              nextBillingAmount: 0,
+              currency: 'USD'
+            },
+            nextBillingDate: trialEndDate
+          });
+
+          await subscription.save();
+          console.log(`Free subscription created for student user: ${user.email}`);
+        } else {
+          console.warn('No free plan found. Student user registered without automatic subscription.');
+        }
+      } catch (subscriptionError) {
+        console.error('Error creating free subscription for student:', subscriptionError);
+        // Don't fail registration if subscription creation fails
+      }
+    }
+
     const userResponse = user.toObject();
     delete userResponse.password;
 
@@ -117,63 +164,32 @@ export const login = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    // Fetch user level and subscription data
-    let [userLevels, userSubscription] = await Promise.all([
-      UserLevel.find({ userId: user._id }).populate('branchId', 'name'),
-      UserSubscription.findOne({ userId: user._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features')
-    ]);
-
-    // If no user levels exist, create default levels for all branches
-    if (userLevels.length === 0) {
-      const branches = await Branch.find();
-      const defaultLevels = branches.map(branch => ({
-        userId: user._id,
-        branchId: branch._id,
-        category: branch.category,
-        currentLevel: 1,
-        completedLevels: [],
-        totalQuestionsAnswered: 0,
-        totalCorrectAnswers: 0,
-        isUnlocked: true
-      }));
-      
-      await UserLevel.insertMany(defaultLevels);
-      userLevels = await UserLevel.find({ userId: user._id }).populate('branchId', 'name');
-    }
+    // Fetch user subscription data
+    const userSubscription = await UserSubscription.findOne({ userId: user._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features');
 
     const userResponse = user.toObject();
     delete userResponse.password;
     delete userResponse.resetPasswordOTP;
 
-    // Prepare user level data
-    const userLevelData = userLevels.map(level => ({
-      branchId: level.branchId,
-      category: level.category,
-      currentLevel: level.currentLevel,
-      completedLevels: level.completedLevels,
-      totalQuestionsAnswered: level.totalQuestionsAnswered,
-      totalCorrectAnswers: level.totalCorrectAnswers,
-      isUnlocked: level.isUnlocked
-    }));
-
-    // Prepare subscription data
+    // Prepare subscription data with trial status
     const subscriptionData = userSubscription ? {
       planId: userSubscription.planId,
       status: userSubscription.status,
       startDate: userSubscription.startDate,
       endDate: userSubscription.endDate,
       trialEndDate: userSubscription.trialEndDate,
-      isTrialActive: userSubscription.isTrialActive,
+      isTrialActive: userSubscription.isTrialCurrentlyActive(), // Use the method to check current status
       autoRenew: userSubscription.autoRenew,
       nextBillingDate: userSubscription.nextBillingDate,
-      plan: {
-        name: userSubscription.planId?.name,
-        tagline: userSubscription.planId?.tagline,
-        price: userSubscription.planId?.price,
-        currency: userSubscription.planId?.currency,
-        billingCycle: userSubscription.planId?.billingCycle,
-        features: userSubscription.planId?.features
-      }
+      // Trial status information
+      trialStatus: {
+        isTrialActive: userSubscription.isTrialCurrentlyActive(), // Use the method to check current status
+        isTrialExpired: userSubscription.isTrialExpired,
+        daysRemaining: userSubscription.daysRemaining,
+        isExpired: userSubscription.isExpired,
+        trialEndDate: userSubscription.trialEndDate,
+        endDate: userSubscription.endDate
+      },
     } : null;
 
     res.json({
@@ -185,7 +201,6 @@ export const login = async (req, res) => {
           firstName: userResponse.firstName || null,
           lastName: userResponse.lastName || null
         },
-        userLevels: userLevelData,
         subscription: subscriptionData,
         token
       }
@@ -223,8 +238,50 @@ export const googleSignIn = async (req, res) => {
         lastName: decodedToken.name?.split(' ').slice(1).join(' ') || '',
         provider: 'google',
         isEmailVerified: decodedToken.email_verified || false,
-        profilePicture: decodedToken.picture || null
+        profilePicture: decodedToken.picture || null,
+        role: 'student' // Default to student for Google sign-in
       });
+
+      // Automatically create free subscription for new student users
+      try {
+        const freePlan = await Plan.findOne({ price: 0, isActive: true });
+        
+        if (freePlan) {
+          const now = new Date();
+          const trialEndDate = new Date(now.getTime() + (freePlan.trialDays * 24 * 60 * 60 * 1000)); // Use plan's trial days
+          const endDate = new Date(now.getTime() + (freePlan.trialDays * 24 * 60 * 60 * 1000)); // Same as trial end for free plan
+
+          const subscription = new UserSubscription({
+            userId: user._id,
+            planId: freePlan._id,
+            status: 'trial', // Set as trial since it's a free trial
+            startDate: now,
+            endDate: endDate,
+            trialEndDate: trialEndDate,
+            isTrialActive: true, // Set as active trial
+            paymentMethod: 'free',
+            billingInfo: {
+              firstName: user.firstName || 'User',
+              lastName: user.lastName || 'User',
+              country: 'US',
+              phoneNumber: user.phoneNumber || '',
+              isCompany: false
+            },
+            pricing: {
+              subtotal: 0,
+              amountDueNow: 0,
+              nextBillingAmount: 0,
+              currency: 'USD'
+            },
+            nextBillingDate: trialEndDate
+          });
+
+          await subscription.save();
+          console.log(`Free subscription created for Google sign-in student user: ${user.email}`);
+        }
+      } catch (subscriptionError) {
+        console.error('Error creating free subscription for Google sign-in student:', subscriptionError);
+      }
     } else {
       user.lastLogin = new Date();
       await user.save();
@@ -234,11 +291,36 @@ export const googleSignIn = async (req, res) => {
     const userResponse = user.toObject();
     delete userResponse.password;
 
+    // Fetch user subscription data for Google sign-in
+    const userSubscription = await UserSubscription.findOne({ userId: user._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features');
+
+    // Prepare subscription data with trial status
+    const subscriptionData = userSubscription ? {
+      planId: userSubscription.planId,
+      status: userSubscription.status,
+      startDate: userSubscription.startDate,
+      endDate: userSubscription.endDate,
+      trialEndDate: userSubscription.trialEndDate,
+      isTrialActive: userSubscription.isTrialCurrentlyActive(), // Use the method to check current status
+      autoRenew: userSubscription.autoRenew,
+      nextBillingDate: userSubscription.nextBillingDate,
+      // Trial status information
+      trialStatus: {
+        isTrialActive: userSubscription.isTrialCurrentlyActive(), // Use the method to check current status
+        isTrialExpired: userSubscription.isTrialExpired,
+        daysRemaining: userSubscription.daysRemaining,
+        isExpired: userSubscription.isExpired,
+        trialEndDate: userSubscription.trialEndDate,
+        endDate: userSubscription.endDate
+      },
+    } : null;
+
     res.json({
       success: true,
       message: 'Google sign-in successful',
       data: {
         user: userResponse,
+        subscription: subscriptionData,
         token
       }
     });
@@ -323,8 +405,50 @@ export const appleSignIn = async (req, res) => {
         firstName: firstName,
         lastName: lastName,
         provider: 'apple',
-        isEmailVerified: decodedToken.email_verified || false
+        isEmailVerified: decodedToken.email_verified || false,
+        role: 'student' // Default to student for Apple sign-in
       });
+
+      // Automatically create free subscription for new student users
+      try {
+        const freePlan = await Plan.findOne({ price: 0, isActive: true });
+        
+        if (freePlan) {
+          const now = new Date();
+          const trialEndDate = new Date(now.getTime() + (freePlan.trialDays * 24 * 60 * 60 * 1000)); // Use plan's trial days
+          const endDate = new Date(now.getTime() + (freePlan.trialDays * 24 * 60 * 60 * 1000)); // Same as trial end for free plan
+
+          const subscription = new UserSubscription({
+            userId: existingUser._id,
+            planId: freePlan._id,
+            status: 'trial', // Set as trial since it's a free trial
+            startDate: now,
+            endDate: endDate,
+            trialEndDate: trialEndDate,
+            isTrialActive: true, // Set as active trial
+            paymentMethod: 'free',
+            billingInfo: {
+              firstName: existingUser.firstName || 'User',
+              lastName: existingUser.lastName || 'User',
+              country: 'US',
+              phoneNumber: existingUser.phoneNumber || '',
+              isCompany: false
+            },
+            pricing: {
+              subtotal: 0,
+              amountDueNow: 0,
+              nextBillingAmount: 0,
+              currency: 'USD'
+            },
+            nextBillingDate: trialEndDate
+          });
+
+          await subscription.save();
+          console.log(`Free subscription created for Apple sign-in student user: ${existingUser.email}`);
+        }
+      } catch (subscriptionError) {
+        console.error('Error creating free subscription for Apple sign-in student:', subscriptionError);
+      }
     } else {
       if (!existingUser.appleId) {
         existingUser.appleId = appleId;
@@ -339,11 +463,36 @@ export const appleSignIn = async (req, res) => {
     const userResponse = existingUser.toObject();
     delete userResponse.password;
 
+    // Fetch user subscription data for Apple sign-in
+    const userSubscription = await UserSubscription.findOne({ userId: existingUser._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features');
+
+    // Prepare subscription data with trial status
+    const subscriptionData = userSubscription ? {
+      planId: userSubscription.planId,
+      status: userSubscription.status,
+      startDate: userSubscription.startDate,
+      endDate: userSubscription.endDate,
+      trialEndDate: userSubscription.trialEndDate,
+      isTrialActive: userSubscription.isTrialCurrentlyActive(), // Use the method to check current status
+      autoRenew: userSubscription.autoRenew,
+      nextBillingDate: userSubscription.nextBillingDate,
+      // Trial status information
+      trialStatus: {
+        isTrialActive: userSubscription.isTrialCurrentlyActive(), // Use the method to check current status
+        isTrialExpired: userSubscription.isTrialExpired,
+        daysRemaining: userSubscription.daysRemaining,
+        isExpired: userSubscription.isExpired,
+        trialEndDate: userSubscription.trialEndDate,
+        endDate: userSubscription.endDate
+      },
+    } : null;
+
     res.json({
       success: true,
       message: 'Apple sign-in successful',
       data: {
         user: userResponse,
+        subscription: subscriptionData,
         token
       }
     });
