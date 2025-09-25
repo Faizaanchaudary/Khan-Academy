@@ -19,7 +19,7 @@ const generateToken = (userId) => {
 
 export const register = async (req, res) => {
   try {
-    const { email, password, confirmPassword, role} = req.body;
+    const { email, password, confirmPassword, role, firstName, lastName } = req.body;
 
     const normalizedEmail = normalizeEmail(email);
 
@@ -46,6 +46,28 @@ export const register = async (req, res) => {
         message: 'Password confirmation does not match'
       });
     }
+
+    // Validate firstName and lastName
+    if (!firstName || !lastName) {
+      return res.status(400).json({
+        success: false,
+        message: 'First name and last name are required'
+      });
+    }
+
+    if (firstName.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'First name must be at least 2 characters long'
+      });
+    }
+
+    if (lastName.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Last name must be at least 2 characters long'
+      });
+    }
   
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
@@ -61,8 +83,10 @@ export const register = async (req, res) => {
     const user = await User.create({
       email: normalizedEmail,
       password: hashedPassword,
-      provider: 'email' ,
-      role ,
+      provider: 'email',
+      role,
+      firstName: firstName.trim(),
+      lastName: lastName.trim()
     });
 
     const token = generateToken(user._id);
@@ -90,8 +114,8 @@ export const register = async (req, res) => {
             isTrialActive: true, // Set as active trial
             paymentMethod: 'free',
             billingInfo: {
-              firstName: user.firstName || 'User',
-              lastName: user.lastName || 'User',
+              firstName: user.firstName,
+              lastName: user.lastName,
               country: 'US',
               phoneNumber: user.phoneNumber || '',
               isCompany: false
@@ -261,8 +285,8 @@ export const googleSignIn = async (req, res) => {
             isTrialActive: true, // Set as active trial
             paymentMethod: 'free',
             billingInfo: {
-              firstName: user.firstName || 'User',
-              lastName: user.lastName || 'User',
+              firstName: user.firstName,
+              lastName: user.lastName,
               country: 'US',
               phoneNumber: user.phoneNumber || '',
               isCompany: false

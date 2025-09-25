@@ -37,6 +37,20 @@ const validateUserRegistration = [
     .isIn(['admin', 'student'])
     .withMessage('Role must be either admin or student'),
   
+  body('firstName')
+    .notEmpty()
+    .withMessage('First name is required')
+    .isLength({ min: 2, max: 50 })
+    .withMessage('First name must be between 2 and 50 characters')
+    .trim(),
+  
+  body('lastName')
+    .notEmpty()
+    .withMessage('Last name is required')
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Last name must be between 2 and 50 characters')
+    .trim(),
+  
   handleValidationErrors
 ];
 
