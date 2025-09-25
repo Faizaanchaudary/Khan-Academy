@@ -8,15 +8,15 @@ export const createQuestionPacket = async (req, res) => {
   try {
     const { packetTitle, packetDescription, subjectCategory, difficultyLevel, questionType, questions } = req.body;
 
-
-    if (!questions || questions.length !== 10) {
+    // Ensure at least 1 question
+    if (!questions || questions.length < 1) {
       return res.status(400).json({
         success: false,
-        message: 'A question packet must contain exactly 10 questions'
+        message: 'A question packet must contain at least 1 question'
       });
     }
 
-
+    // Validate each question
     for (let i = 0; i < questions.length; i++) {
       const question = questions[i];
       if (!question.questionText || !question.options || !question.correctAnswer || !question.reasonForCorrectAnswer) {
@@ -58,6 +58,7 @@ export const createQuestionPacket = async (req, res) => {
     });
   }
 };
+
 
 
 export const getQuestionPackets = async (req, res) => {
