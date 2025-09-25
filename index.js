@@ -20,6 +20,7 @@ import questionPacketRoutes from './routes/questionPacket.js';
 import paypalRoutes from './routes/paypal.js';
 import stripeRoutes from './routes/stripe.js';
 import planSelectionRoutes from './routes/planSelection.js';
+import profileRoutes from './routes/profile.js';
 
 
 const app = express();
@@ -56,6 +57,7 @@ app.use('/api/questionPacket', questionPacketRoutes);
 app.use('/api/paypal', paypalRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/plan-selection', planSelectionRoutes);
+app.use('/api/profile', profileRoutes);
 
 
 

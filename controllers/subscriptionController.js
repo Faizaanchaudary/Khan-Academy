@@ -33,7 +33,7 @@ export const createSubscription = async (req, res) => {
                                        plan.price > 0;
       
       if (!isUpgradingFromFreeTrial) {
-        return sendError(res, 'User already has an active subscription', 400);
+      return sendError(res, 'User already has an active subscription', 400);
       }
       
       // Cancel the existing free trial subscription
