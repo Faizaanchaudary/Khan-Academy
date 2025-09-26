@@ -49,7 +49,7 @@ const questionPacketSchema = new mongoose.Schema({
   questionType: {
     type: String,
     required: true,
-    enum: ['Multiple Choice', 'True/False', 'Fill in the Blank'],
+    enum: ['Multiple Choice', 'True/False', 'Fill in the Blanks'],
     default: 'Multiple Choice'
   },
   status: {
