@@ -131,14 +131,8 @@ export const updateQuestionPacket = async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
 
-
-    if (updateData.questions && updateData.questions.length !== 10) {
-      return res.status(400).json({
-        success: false,
-        message: 'A question packet must contain exactly 10 questions'
-      });
-    }
-
+    // Allow flexible number of questions for updates (1, 2, 3, 4, etc.)
+    
     const questionPacket = await QuestionPacket.findByIdAndUpdate(
       id,
       updateData,
@@ -212,10 +206,12 @@ export const submitQuestionPacketAnswers = async (req, res) => {
     }
 
 
-    if (!answers || answers.length !== 10) {
+    const totalQuestionsInPacket = questionPacket.questions.length;
+
+    if (!answers || answers.length !== totalQuestionsInPacket) {
       return res.status(400).json({
         success: false,
-        message: 'You must answer all 10 questions'
+        message: `You must answer all ${totalQuestionsInPacket} questions`
       });
     }
 
@@ -223,7 +219,7 @@ export const submitQuestionPacketAnswers = async (req, res) => {
     let correctAnswers = 0;
     const answerResults = [];
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < totalQuestionsInPacket; i++) {
       const userAnswer = answers[i];
       const correctAnswer = questionPacket.questions[i].correctAnswer;
       const isCorrect = userAnswer === correctAnswer;
@@ -239,8 +235,8 @@ export const submitQuestionPacketAnswers = async (req, res) => {
       });
     }
 
-    const score = (correctAnswers / 10) * 100;
-    const isCompleted = correctAnswers === 10;
+    const score = (correctAnswers / totalQuestionsInPacket) * 100;
+    const isCompleted = correctAnswers === totalQuestionsInPacket;
 
 
     const questionPacketAnswer = new QuestionPacketAnswer({
@@ -250,7 +246,7 @@ export const submitQuestionPacketAnswers = async (req, res) => {
       category: questionPacket.subjectCategory,
       answers: answerResults,
       correctAnswers,
-      totalQuestions: 10,
+      totalQuestions: totalQuestionsInPacket,
       score,
       isCompleted
     });
@@ -266,7 +262,7 @@ export const submitQuestionPacketAnswers = async (req, res) => {
       message: 'Answers submitted successfully',
       data: {
         correctAnswers,
-        totalQuestions: 10,
+        totalQuestions: totalQuestionsInPacket,
         score,
         isCompleted,
         results: answerResults,
