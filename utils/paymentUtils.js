@@ -60,9 +60,7 @@ export const validateBillingInfo = (billingInfo) => {
     errors.push('Valid email address is required');
   }
   
-  if (!billingInfo.country || billingInfo.country.trim().length < 2) {
-    errors.push('Country is required');
-  }
+  // NOTE: Card details (cardNumber, cardExpiry, cardBrand, etc.) are handled securely by Stripe checkout
   
   return {
     valid: errors.length === 0,
@@ -105,8 +103,7 @@ export const generatePaymentSummary = (plan, billingInfo, discountAmount = 0) =>
     },
     billing: {
       name: `${billingInfo.firstName} ${billingInfo.lastName}`,
-      email: billingInfo.email,
-      country: billingInfo.country
+      email: billingInfo.email
     },
     features: plan.features || []
   };

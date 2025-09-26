@@ -27,7 +27,7 @@ import {
 // Create Stripe payment intent for subscription purchase
 export const createStripePaymentIntent = async (req, res) => {
   try {
-    const { planId, billingInfo, promoCode, discountAmount = 0 } = req.body;
+    const { planId } = req.body;
     const userId = req.user.id;
 
     // Validate required fields
@@ -35,15 +35,18 @@ export const createStripePaymentIntent = async (req, res) => {
       return sendError(res, 'Plan ID is required', 400);
     }
 
-    if (!billingInfo || !billingInfo.firstName || !billingInfo.lastName || !billingInfo.country) {
-      return sendError(res, 'Billing information (firstName, lastName, country) is required', 400);
+    // Get user information from authenticated user
+    const user = await User.findById(userId);
+    if (!user) {
+      return sendError(res, 'User not found', 404);
     }
 
-    // Validate billing information
-    const billingValidation = validateBillingInfo(billingInfo);
-    if (!billingValidation.valid) {
-      return sendError(res, `Billing validation failed: ${billingValidation.errors.join(', ')}`, 400);
-    }
+    // Prepare billing information from user data
+    const billingInfo = {
+      firstName: user.firstName || 'User',
+      lastName: user.lastName || 'User',
+      email: user.email
+    };
 
     // Get plan details
     const plan = await Plan.findById(planId);
@@ -81,34 +84,39 @@ export const createStripePaymentIntent = async (req, res) => {
 
     // Calculate pricing
     const subtotal = plan.price;
-    const amountDueNow = plan.trialDays > 0 ? 0 : subtotal - discountAmount;
-    const nextBillingAmount = subtotal - discountAmount;
+    const amountDueNow = plan.trialDays > 0 ? 0 : subtotal;
+    const nextBillingAmount = subtotal;
 
     // For free plans or trial-only plans, create subscription directly without Stripe
     if (subtotal === 0 || (plan.trialDays > 0 && amountDueNow === 0)) {
       // Create subscription directly for free plans or trial-only plans
-      const now = new Date();
-      const trialEndDate = new Date(now.getTime() + (plan.trialDays * 24 * 60 * 60 * 1000));
-      const endDate = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
+      const freePlanDate = new Date();
+      const trialEndDate = new Date(freePlanDate.getTime() + (plan.trialDays * 24 * 60 * 60 * 1000));
+      const endDate = new Date(freePlanDate.getTime() + (30 * 24 * 60 * 60 * 1000));
+
+      // Use the same cleanBillingInfo format as the paid plan
+      const cleanBillingInfo = {
+        firstName: billingInfo.firstName,
+        lastName: billingInfo.lastName,
+        email: billingInfo.email
+      };
 
       const subscription = new UserSubscription({
         userId,
         planId,
         status: plan.trialDays > 0 ? 'trial' : 'active',
-        startDate: now,
+        startDate: freePlanDate,
         endDate,
         trialEndDate,
         isTrialActive: plan.trialDays > 0,
         paymentMethod: 'free',
-        billingInfo,
+        billingInfo: cleanBillingInfo,
         pricing: {
           subtotal,
           amountDueNow: 0,
           nextBillingAmount,
           currency: plan.currency
         },
-        promoCode,
-        discountAmount,
         nextBillingDate: plan.trialDays > 0 ? trialEndDate : endDate
       });
 
@@ -138,8 +146,7 @@ export const createStripePaymentIntent = async (req, res) => {
       `${billingInfo.firstName} ${billingInfo.lastName}`,
       {
         userId: userId.toString(),
-        planId: planId.toString(),
-        billingCountry: billingInfo.country
+        planId: planId.toString()
       }
     );
 
@@ -165,44 +172,49 @@ export const createStripePaymentIntent = async (req, res) => {
       return sendError(res, `Failed to create Stripe price: ${priceResult.error}`, 500);
     }
 
-    // Create recurring subscription for monthly auto-renewal
-    const subscriptionResult = await createRecurringSubscription(
-      customerResult.customer.id,
-      {
-        priceId: priceResult.price.id,
-        billingCycleAnchor: Math.floor(Date.now() / 1000) + (plan.trialDays * 24 * 60 * 60) // Start billing after trial or immediately
-      },
+    // Create payment intent for frontend checkout
+    const paymentIntentResult = await createPaymentIntent(
+      amountDueNow, // Amount in dollars
+      plan.currency.toLowerCase(),
       {
         userId: userId.toString(),
         planId: planId.toString(),
         planName: plan.name,
-        subscriptionType: 'recurring'
+        customerId: customerResult.customer.id
       }
     );
 
-    if (!subscriptionResult.success) {
-      return sendError(res, `Failed to create recurring subscription: ${subscriptionResult.error}`, 500);
+    if (!paymentIntentResult.success) {
+      return sendError(res, `Failed to create payment intent: ${paymentIntentResult.error}`, 500);
     }
 
+    const paymentIntent = paymentIntentResult.paymentIntent;
+
     // Store pending subscription
-    const now = new Date();
-    const trialEndDate = new Date(now.getTime() + (plan.trialDays * 24 * 60 * 60 * 1000));
-    const endDate = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
+    const subscriptionDate = new Date();
+    const trialEndDate = new Date(subscriptionDate.getTime() + (plan.trialDays * 24 * 60 * 60 * 1000));
+    const endDate = new Date(subscriptionDate.getTime() + (30 * 24 * 60 * 60 * 1000));
+
+    // Prepare billing info without card details
+    const cleanBillingInfo = {
+      firstName: billingInfo.firstName,
+      lastName: billingInfo.lastName,
+      email: billingInfo.email
+    };
 
     const subscription = new UserSubscription({
       userId,
       planId,
       status: 'pending',
-      startDate: now,
+      startDate: subscriptionDate,
       endDate,
       trialEndDate,
       isTrialActive: plan.trialDays > 0,
       paymentMethod: 'stripe',
-      billingInfo,
+      billingInfo: cleanBillingInfo,
       stripeDetails: {
         customerId: customerResult.customer.id,
-        subscriptionId: subscriptionResult.subscription.id,
-        priceId: priceResult.price.id,
+        paymentIntentId: paymentIntent.id,
         paymentStatus: 'pending'
       },
       pricing: {
@@ -211,39 +223,23 @@ export const createStripePaymentIntent = async (req, res) => {
         nextBillingAmount,
         currency: plan.currency
       },
-      promoCode,
-      discountAmount,
-      nextBillingDate: plan.trialDays > 0 ? trialEndDate : endDate,
-      autoRenew: true // Enable automatic renewal for monthly billing
+      nextBillingDate: plan.trialDays > 0 ? trialEndDate : endDate
     });
 
     await subscription.save();
 
-    // Get the payment intent for immediate payment (first charge)
-    const stripeSubscription = subscriptionResult.subscription;
-    const latestInvoice = stripeSubscription.latest_invoice;
-    const paymentIntent = latestInvoice ? latestInvoice.payment_intent : null;
-
-    // Return payment intent details for frontend (immediate first payment)
-    sendSuccess(res, 'Stripe recurring subscription created successfully (auto-renewal enabled)', {
-      clientSecret: paymentIntent ? paymentIntent.client_secret : null,
-      paymentIntentId: paymentIntent ? paymentIntent.id : null,
-      subscriptionId: subscriptionResult.subscription.id,
+    // Return payment intent details for frontend checkout
+    sendSuccess(res, 'Stripe payment intent created successfully', {
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
       customerId: customerResult.customer.id,
-      subscription: {
-        id: subscriptionResult.subscription.id,
-        status: stripeSubscription.status,
-        current_period_start: stripeSubscription.current_period_start,
-        current_period_end: stripeSubscription.current_period_end
-      },
       localSubscriptionId: subscription._id,
       amount: amountDueNow,
       currency: plan.currency,
       plan: {
         name: plan.name,
         features: plan.features
-      },
-      autoRenew: true // Inform frontend about auto-renewal
+      }
     });
 
   } catch (error) {

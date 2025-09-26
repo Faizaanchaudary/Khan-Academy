@@ -30,8 +30,8 @@ export const createPayPalOrder = async (req, res) => {
       return sendError(res, 'Plan ID is required', 400);
     }
 
-    if (!billingInfo || !billingInfo.firstName || !billingInfo.lastName || !billingInfo.country) {
-      return sendError(res, 'Billing information (firstName, lastName, country) is required', 400);
+    if (!billingInfo || !billingInfo.firstName || !billingInfo.lastName) {
+      return sendError(res, 'Billing information (firstName, lastName) is required', 400);
     }
 
     // Validate billing information

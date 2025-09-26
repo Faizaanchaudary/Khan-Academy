@@ -101,9 +101,7 @@ export const selectPlan = async (req, res) => {
         billingInfo: {
           firstName: user.firstName || 'User',
           lastName: user.lastName || 'User',
-          country: 'US',
-          phoneNumber: '',
-          isCompany: false
+          email: user.email || 'user@example.com'
         },
         pricing: {
           subtotal: 0,

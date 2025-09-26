@@ -54,22 +54,18 @@ const userSubscriptionSchema = new mongoose.Schema({
       type: String,
       required: true
     },
-    country: {
+    email: {
       type: String,
       required: true
     },
     phoneNumber: {
       type: String
-    },
-    isCompany: {
-      type: Boolean,
-      default: false
-    },
-    companyName: {
-      type: String
     }
   },
   paymentDetails: {
+    cardHolderName: {
+      type: String
+    },
     cardNumber: {
       type: String,
       set: function(value) {
@@ -77,6 +73,10 @@ const userSubscriptionSchema = new mongoose.Schema({
       }
     },
     cardType: {
+      type: String,
+      enum: ['debit', 'credit']
+    },
+    cardBrand: {
       type: String,
       enum: ['visa', 'mastercard', 'amex', 'discover']
     },
