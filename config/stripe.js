@@ -176,6 +176,90 @@ export const createSubscription = async (customerId, priceId, metadata = {}) => 
   }
 };
 
+// Create recurring subscription with price
+export const createRecurringSubscription = async (customerId, subscriptionData, metadata = {}) => {
+  try {
+    validateStripeConfig();
+    const stripe = getStripeInstance();
+    
+    const subscription = await stripe.subscriptions.create({
+      customer: customerId,
+      items: [{ price: subscriptionData.priceId }],
+      payment_behavior: 'default_incomplete',
+      payment_settings: { save_default_payment_method: 'on_subscription' },
+      billing_cycle_anchor: subscriptionData.billingCycleAnchor,
+      expand: ['latest_invoice.payment_intent'],
+      metadata: {
+        ...metadata,
+        created_at: new Date().toISOString()
+      }
+    });
+
+    return {
+      success: true,
+      subscription
+    };
+  } catch (error) {
+    console.error('Stripe recurring subscription creation error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+// Create price for recurring billing
+export const createPrice = async (amount, currency = 'usd', interval = 'month', metadata = {}) => {
+  try {
+    validateStripeConfig();
+    const stripe = getStripeInstance();
+    
+    const price = await stripe.prices.create({
+      unit_amount: Math.round(amount * 100), // Convert to cents
+      currency: currency.toLowerCase(),
+      recurring: {
+        interval: interval // 'month' for monthly billing
+      },
+      product_data: {
+        name: metadata.planName || 'Monthly Plan',
+        metadata: metadata
+      }
+    });
+
+    return {
+      success: true,
+      price
+    };
+  } catch (error) {
+    console.error('Stripe price creation error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+// Get subscription details
+export const getSubscriptionDetails = async (subscriptionId) => {
+  try {
+    validateStripeConfig();
+    const stripe = getStripeInstance();
+    
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    
+    return {
+      success: true,
+      subscription
+    };
+  } catch (error) {
+    console.error('Get subscription details error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
 // Cancel subscription
 export const cancelSubscription = async (subscriptionId) => {
   try {

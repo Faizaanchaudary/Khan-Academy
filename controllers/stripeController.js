@@ -8,6 +8,9 @@ import {
   createCustomer,
   createSetupIntent,
   createSubscription,
+  createRecurringSubscription,
+  createPrice,
+  getSubscriptionDetails,
   cancelSubscription,
   refundPayment,
   verifyWebhookSignature,
@@ -144,20 +147,41 @@ export const createStripePaymentIntent = async (req, res) => {
       return sendError(res, `Failed to create Stripe customer: ${customerResult.error}`, 500);
     }
 
-    // Create payment intent
-    const paymentIntentResult = await createPaymentIntent(
-      amountDueNow,
+    // For monthly plans, we'll create a Stripe subscription for auto-renewal
+    // This ensures user gets charged today AND automatically every month
+    const priceResult = await createPrice(
+      nextBillingAmount, // $40/month
       plan.currency.toLowerCase(),
+      'month', // Monthly billing
+      {
+        planId: planId.toString(),
+        planName: plan.name,
+        userId: userId.toString(),
+        billingCycle: plan.billingCycle
+      }
+    );
+
+    if (!priceResult.success) {
+      return sendError(res, `Failed to create Stripe price: ${priceResult.error}`, 500);
+    }
+
+    // Create recurring subscription for monthly auto-renewal
+    const subscriptionResult = await createRecurringSubscription(
+      customerResult.customer.id,
+      {
+        priceId: priceResult.price.id,
+        billingCycleAnchor: Math.floor(Date.now() / 1000) + (plan.trialDays * 24 * 60 * 60) // Start billing after trial or immediately
+      },
       {
         userId: userId.toString(),
         planId: planId.toString(),
         planName: plan.name,
-        subscriptionType: 'one_time'
+        subscriptionType: 'recurring'
       }
     );
 
-    if (!paymentIntentResult.success) {
-      return sendError(res, `Failed to create payment intent: ${paymentIntentResult.error}`, 500);
+    if (!subscriptionResult.success) {
+      return sendError(res, `Failed to create recurring subscription: ${subscriptionResult.error}`, 500);
     }
 
     // Store pending subscription
@@ -177,7 +201,8 @@ export const createStripePaymentIntent = async (req, res) => {
       billingInfo,
       stripeDetails: {
         customerId: customerResult.customer.id,
-        paymentIntentId: paymentIntentResult.paymentIntent.id,
+        subscriptionId: subscriptionResult.subscription.id,
+        priceId: priceResult.price.id,
         paymentStatus: 'pending'
       },
       pricing: {
@@ -188,23 +213,37 @@ export const createStripePaymentIntent = async (req, res) => {
       },
       promoCode,
       discountAmount,
-      nextBillingDate: plan.trialDays > 0 ? trialEndDate : endDate
+      nextBillingDate: plan.trialDays > 0 ? trialEndDate : endDate,
+      autoRenew: true // Enable automatic renewal for monthly billing
     });
 
     await subscription.save();
 
-    // Return payment intent details for frontend
-    sendSuccess(res, 'Stripe payment intent created successfully', {
-      clientSecret: paymentIntentResult.paymentIntent.client_secret,
-      paymentIntentId: paymentIntentResult.paymentIntent.id,
+    // Get the payment intent for immediate payment (first charge)
+    const stripeSubscription = subscriptionResult.subscription;
+    const latestInvoice = stripeSubscription.latest_invoice;
+    const paymentIntent = latestInvoice ? latestInvoice.payment_intent : null;
+
+    // Return payment intent details for frontend (immediate first payment)
+    sendSuccess(res, 'Stripe recurring subscription created successfully (auto-renewal enabled)', {
+      clientSecret: paymentIntent ? paymentIntent.client_secret : null,
+      paymentIntentId: paymentIntent ? paymentIntent.id : null,
+      subscriptionId: subscriptionResult.subscription.id,
       customerId: customerResult.customer.id,
-      subscriptionId: subscription._id,
+      subscription: {
+        id: subscriptionResult.subscription.id,
+        status: stripeSubscription.status,
+        current_period_start: stripeSubscription.current_period_start,
+        current_period_end: stripeSubscription.current_period_end
+      },
+      localSubscriptionId: subscription._id,
       amount: amountDueNow,
       currency: plan.currency,
       plan: {
         name: plan.name,
         features: plan.features
-      }
+      },
+      autoRenew: true // Inform frontend about auto-renewal
     });
 
   } catch (error) {
@@ -225,7 +264,10 @@ export const confirmStripePayment = async (req, res) => {
 
     // Find the subscription with this payment intent ID
     const subscription = await UserSubscription.findOne({
-      'stripeDetails.paymentIntentId': paymentIntentId,
+      $or: [
+        { 'stripeDetails.paymentIntentId': paymentIntentId },
+        { 'stripeDetails.subscriptionId': paymentIntentId } // For subscription-based lookup
+      ],
       userId,
       status: 'pending'
     }).populate('planId');
@@ -234,7 +276,54 @@ export const confirmStripePayment = async (req, res) => {
       return sendError(res, 'Subscription not found or already processed', 404);
     }
 
-    // Confirm the payment intent with Stripe
+    // Check if using subscription-based payment
+    if (subscription.stripeDetails.subscriptionId && subscription.stripeDetails.subscriptionId === paymentIntentId) {
+      // Handle subscription-based confirmation
+      const subscriptionResult = await getSubscriptionDetails(subscription.stripeDetails.subscriptionId);
+      
+      if (!subscriptionResult.success) {
+        return sendError(res, `Failed to get subscription details: ${subscriptionResult.error}`, 500);
+      }
+
+      const stripeSubscription = subscriptionResult.subscription;
+      
+      // Check subscription status
+      if (stripeSubscription.status === 'active' || stripeSubscription.status === 'trialing') {
+        subscription.status = subscription.planId.trialDays > 0 ? 'trial' : 'active';
+        subscription.stripeDetails = {
+          ...subscription.stripeDetails,
+          paymentStatus: 'succeeded'
+        };
+        subscription.lastPaymentDate = new Date();
+        subscription.autoRenew = true; // Enable auto-renewal
+
+        await subscription.save();
+        
+        // Populate plan details for response
+        await subscription.populate('planId', 'name tagline price currency billingCycle features');
+
+        sendSuccess(res, 'Recurring subscription confirmed and activated successfully (auto-renewal enabled)', {
+          subscription: {
+            ...subscription.toObject(),
+            daysRemaining: subscription.daysRemaining,
+            isExpired: subscription.isExpired,
+            isTrialExpired: subscription.isTrialExpired,
+            autoRenew: subscription.autoRenew,
+            stripeSubscription: {
+              id: stripeSubscription.id,
+              status: stripeSubscription.status,
+              current_period_start: stripeSubscription.current_period_start,
+              current_period_end: stripeSubscription.current_period_end
+            }
+          }
+        });
+        return;
+      } else {
+        return sendError(res, `Subscription status: ${stripeSubscription.status}`, 400);
+      }
+    }
+
+    // Fallback to payment intent confirmation (for backwards compatibility)
     const confirmResult = await confirmPaymentIntent(paymentIntentId);
     
     if (!confirmResult.success) {
@@ -422,6 +511,19 @@ export const handleStripeWebhook = async (req, res) => {
       case 'payment_intent.canceled':
         await handlePaymentIntentCanceled(event.data.object);
         break;
+      // Auto-renewal subscription events
+      case 'invoice.payment_succeeded':
+        await handleInvoicePaymentSucceeded(event.data.object);
+        break;
+      case 'invoice.payment_failed':
+        await handleInvoicePaymentFailed(event.data.object);
+        break;
+      case 'customer.subscription.updated':
+        await handleSubscriptionUpdated(event.data.object);
+        break;
+      case 'customer.subscription.deleted':
+        await handleSubscriptionDeleted(event.data.object);
+        break;
       default:
         console.log('Unhandled webhook event:', event.type);
     }
@@ -495,6 +597,126 @@ const handlePaymentIntentCanceled = async (paymentIntent) => {
     }
   } catch (error) {
     console.error('Error handling payment intent canceled:', error);
+  }
+};
+
+// Handle invoice payment succeeded (RECURRING BILLING SUCCESS)
+const handleInvoicePaymentSucceeded = async (invoice) => {
+  try {
+    console.log('Invoice payment succeeded:', invoice.id);
+    
+    if (invoice.subscription) {
+      // Find the subscription by Stripe subscription ID
+      const subscription = await UserSubscription.findOne({
+        'stripeDetails.subscriptionId': invoice.subscription
+      }).populate('planId');
+
+      if (subscription) {
+        // Update subscription for successful renewal
+        const newEndDate = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)); // Add 30 days
+        
+        subscription.status = 'active';
+        subscription.endDate = newEndDate;
+        subscription.nextBillingDate = newEndDate;
+        subscription.lastPaymentDate = new Date();
+        subscription.stripeDetails.paymentStatus = 'succeeded';
+        
+        await subscription.save();
+        
+        console.log('💳 AUTOMATIC RENEWAL SUCCESS - User subscription renewed:', {
+          subscriptionId: subscription._id,
+          userId: subscription.userId,
+          amount: invoice.amount_paid / 100,
+          currency: invoice.currency,
+          newEndDate: newEndDate
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error handling invoice payment succeeded:', error);
+  }
+};
+
+// Handle invoice payment failed (RECURRING BILLING FAILURE)
+const handleInvoicePaymentFailed = async (invoice) => {
+  try {
+    console.log('Invoice payment failed:', invoice.id);
+    
+    if (invoice.subscription) {
+      // Find the subscription by Stripe subscription ID
+      const subscription = await UserSubscription.findOne({
+        'stripeDetails.subscriptionId': invoice.subscription
+      });
+
+      if (subscription) {
+        // Mark subscription as failed but give grace period
+        subscription.stripeDetails.paymentStatus = 'failed';
+        subscription.lastPaymentDate = new Date();
+        
+        await subscription.save();
+        
+        console.log('⚠️ AUTOMATIC RENEWAL FAILED - Payment rejected:', {
+          subscriptionId: subscription._id,
+          userId: subscription.userId,
+          amount: invoice.amount_due / 100,
+          currency: invoice.currency,
+          reason: 'Payment method declined'
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error handling invoice payment failed:', error);
+  }
+};
+
+// Handle subscription updates
+const handleSubscriptionUpdated = async (stripeSubscription) => {
+  try {
+    const subscription = await UserSubscription.findOne({
+      'stripeDetails.subscriptionId': stripeSubscription.id
+    });
+
+    if (subscription) {
+      // Update based on Stripe subscription status
+      switch (stripeSubscription.status) {
+        case 'active':
+          subscription.status = 'active';
+          break;
+        case 'past_due':
+          subscription.status = 'expired'; // Grace period ended
+          break;
+        case 'canceled':
+          subscription.status = 'cancelled';
+          subscription.autoRenew = false;
+          break;
+      }
+      
+      await subscription.save();
+      console.log('Subscription updated:', subscription._id, 'Status:', subscription.status);
+    }
+  } catch (error) {
+    console.error('Error handling subscription updated:', error);
+  }
+};
+
+// Handle subscription deleted (cancellation)
+const handleSubscriptionDeleted = async (stripeSubscription) => {
+  try {
+    const subscription = await UserSubscription.findOne({
+      'stripeDetails.subscriptionId': stripeSubscription.id
+    });
+
+    if (subscription) {
+      subscription.status = 'cancelled';
+      subscription.autoRenew = false;
+      subscription.cancelledAt = new Date();
+      subscription.cancellationReason = 'Subscription cancelled on Stripe';
+      
+      await subscription.save();
+      console.log('Subscription cancelled:', subscription._id);
+    }
+  } catch (error) {
+    console.error('Error handling subscription deleted:', error);
   }
 };
 
