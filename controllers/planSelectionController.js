@@ -36,7 +36,7 @@ export const getAvailablePlans = async (req, res) => {
 // Select a plan (free or paid)
 export const selectPlan = async (req, res) => {
   try {
-    const { planId, billingInfo } = req.body;
+    const { planId } = req.body;
     const userId = req.user.id;
 
     if (!planId) {
@@ -77,13 +77,8 @@ export const selectPlan = async (req, res) => {
       await existingSubscription.save();
     }
 
-    // Handle free plan selection (no payment required)
+    // Handle free plan selection - auto-activate immediately
     if (plan.price === 0) {
-      // Validate minimal billing info for free plan
-      if (!billingInfo || !billingInfo.firstName || !billingInfo.lastName) {
-        return sendError(res, 'First name and last name are required for free trial', 400);
-      }
-
       const now = new Date();
       const trialEndDate = new Date(now.getTime() + (plan.trialDays * 24 * 60 * 60 * 1000));
       const endDate = new Date(now.getTime() + (plan.trialDays * 24 * 60 * 60 * 1000));
@@ -98,10 +93,10 @@ export const selectPlan = async (req, res) => {
         isTrialActive: true,
         paymentMethod: 'free',
         billingInfo: {
-          firstName: billingInfo.firstName,
-          lastName: billingInfo.lastName,
-          country: billingInfo.country || 'US',
-          phoneNumber: billingInfo.phoneNumber || '',
+          firstName: '',
+          lastName: '',
+          country: 'US',
+          phoneNumber: '',
           isCompany: false
         },
         pricing: {
@@ -116,7 +111,7 @@ export const selectPlan = async (req, res) => {
       await subscription.save();
       await subscription.populate('planId', 'name tagline price currency billingCycle features');
 
-      return sendSuccess(res, 'Free trial activated successfully', {
+      return sendSuccess(res, 'Free plan activated successfully', {
         subscription: {
           ...subscription.toObject(),
           daysRemaining: subscription.daysRemaining,
@@ -124,19 +119,13 @@ export const selectPlan = async (req, res) => {
           isTrialExpired: subscription.isTrialExpired
         },
         isFreePlan: true,
-        message: `Your ${plan.trialDays}-day free trial has started!`
+        message: `Your ${plan.trialDays}-day free plan has been activated!`
       });
     }
 
-    // Handle paid plan selection (redirect to payment)
+    // Handle paid plan selection - only select plan, no activation until payment
     if (plan.price > 0) {
-      // Validate billing info for paid plans
-      if (!billingInfo || !billingInfo.firstName || !billingInfo.lastName || !billingInfo.country) {
-        return sendError(res, 'Complete billing information (firstName, lastName, country) is required for paid plans', 400);
-      }
-
-      // Return payment options for paid plans
-      return sendSuccess(res, 'Plan selected, payment required', {
+      return sendSuccess(res, 'Plan selected successfully', {
         plan: {
           id: plan._id,
           name: plan.name,
@@ -146,14 +135,6 @@ export const selectPlan = async (req, res) => {
           billingCycle: plan.billingCycle,
           features: plan.features,
           trialDays: plan.trialDays
-        },
-        billingInfo: {
-          firstName: billingInfo.firstName,
-          lastName: billingInfo.lastName,
-          country: billingInfo.country,
-          phoneNumber: billingInfo.phoneNumber || '',
-          isCompany: billingInfo.isCompany || false,
-          companyName: billingInfo.companyName || ''
         },
         paymentOptions: {
           stripe: {
@@ -166,7 +147,7 @@ export const selectPlan = async (req, res) => {
           }
         },
         nextSteps: {
-          message: 'Choose your preferred payment method to complete the subscription',
+          message: 'Choose your preferred payment method to activate the subscription',
           endpoints: {
             stripe: '/api/stripe/create-payment-intent',
             paypal: '/api/paypal/create-order'
