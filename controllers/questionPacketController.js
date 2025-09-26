@@ -6,7 +6,7 @@ import UserAnswer from '../models/UserAnswer.js';
 
 export const createQuestionPacket = async (req, res) => {
   try {
-    const { packetTitle, packetDescription, subjectCategory, difficultyLevel, questionType, questions } = req.body;
+    const { packetTitle, packetDescription, subjectCategory, difficultyLevel, questionType, questions, category } = req.body;
 
     // Ensure at least 1 question
     if (!questions || questions.length < 1) {
@@ -39,7 +39,8 @@ export const createQuestionPacket = async (req, res) => {
       subjectCategory,
       difficultyLevel,
       questionType,
-      questions
+      questions,
+      category
     });
 
     await questionPacket.save();
@@ -63,13 +64,14 @@ export const createQuestionPacket = async (req, res) => {
 
 export const getQuestionPackets = async (req, res) => {
   try {
-    const { subject, difficulty, status } = req.query;
+    const { subject, difficulty, status, category } = req.query;
     
     let filter = {};
     
     if (subject) filter.subjectCategory = subject;
     if (difficulty) filter.difficultyLevel = difficulty;
     if (status) filter.status = status;
+    if (category) filter.category = category;
 
     const questionPackets = await QuestionPacket.find(filter)
       .sort({ createdAt: -1 });
@@ -466,7 +468,7 @@ export const getQuestionPacketProgress = async (req, res) => {
 
 export const saveAsDraft = async (req, res) => {
   try {
-    const { packetTitle, packetDescription, subject, difficultyLevel, questionType, questions } = req.body;
+    const { packetTitle, packetDescription, subject, difficultyLevel, questionType, questions, category } = req.body;
 
     const questionPacket = new QuestionPacket({
       packetTitle,
@@ -475,7 +477,8 @@ export const saveAsDraft = async (req, res) => {
       difficultyLevel,
       questionType,
       questions: questions || [], // Allow empty questions for draft
-      status: 'Draft'
+      status: 'Draft',
+      category
     });
 
     await questionPacket.save();

@@ -59,6 +59,11 @@ const questionPacketSchema = new mongoose.Schema({
     default: 'Active',
     index: true
   },
+  category: {
+    type: String,
+    required: false,
+    trim: true
+  },
   questions: {
     type: [questionSchema],
     validate: {
@@ -86,6 +91,7 @@ questionPacketSchema.pre('save', function(next) {
 questionPacketSchema.index({ subjectCategory: 1, difficultyLevel: 1 });
 questionPacketSchema.index({ subjectCategory: 1, status: 1 });
 questionPacketSchema.index({ status: 1 });
+questionPacketSchema.index({ category: 1 });
 
 const QuestionPacket = mongoose.model('QuestionPacket', questionPacketSchema);
 
