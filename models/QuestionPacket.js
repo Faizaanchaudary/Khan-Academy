@@ -63,9 +63,9 @@ const questionPacketSchema = new mongoose.Schema({
     type: [questionSchema],
     validate: {
       validator: function(questions) {
-        return questions.length === 10;
+        return questions.length > 0;
       },
-      message: 'A question packet must contain exactly 10 questions'
+      message: 'A question packet must contain at least 1 question'
     }
   },
   createdAt: {
