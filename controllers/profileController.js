@@ -22,7 +22,6 @@ export const getUserProfile = async (req, res) => {
         role: user.role,
         provider: user.provider,
         profilePic: user.profilePic,
-        phoneNumber: user.phoneNumber,
         isEmailVerified: user.isEmailVerified,
         lastLogin: user.lastLogin,
         createdAt: user.createdAt,
@@ -40,7 +39,7 @@ export const getUserProfile = async (req, res) => {
 export const updateUserProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { firstName, lastName, phoneNumber, profilePic } = req.body;
+    const { firstName, lastName, profilePic } = req.body;
 
     // Validate required fields
     if (!firstName || !lastName) {
@@ -55,14 +54,6 @@ export const updateUserProfile = async (req, res) => {
       return sendError(res, 'Last name must be at least 2 characters long', 400);
     }
 
-    // Validate phone number if provided
-    if (phoneNumber && phoneNumber.trim().length > 0) {
-      const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-      if (!phoneRegex.test(phoneNumber.trim())) {
-        return sendError(res, 'Please provide a valid phone number', 400);
-      }
-    }
-
     const user = await User.findById(userId);
     
     if (!user) {
@@ -72,7 +63,6 @@ export const updateUserProfile = async (req, res) => {
     // Update user fields
     user.firstName = firstName.trim();
     user.lastName = lastName.trim();
-    user.phoneNumber = phoneNumber ? phoneNumber.trim() : null;
     user.profilePic = profilePic || null;
 
     await user.save();
@@ -91,7 +81,6 @@ export const updateUserProfile = async (req, res) => {
         role: userResponse.role,
         provider: userResponse.provider,
         profilePic: userResponse.profilePic,
-        phoneNumber: userResponse.phoneNumber,
         isEmailVerified: userResponse.isEmailVerified,
         lastLogin: userResponse.lastLogin,
         createdAt: userResponse.createdAt,

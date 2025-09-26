@@ -79,11 +79,6 @@ const validateProfileUpdate = [
     .isLength({ min: 2, max: 50 })
     .withMessage('Last name must be between 2 and 50 characters'),
   
-  body('phoneNumber')
-    .optional()
-    .isMobilePhone()
-    .withMessage('Please provide a valid phone number'),
-  
   body('dateOfBirth')
     .optional()
     .isISO8601()

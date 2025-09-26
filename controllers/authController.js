@@ -117,7 +117,7 @@ export const register = async (req, res) => {
               firstName: user.firstName,
               lastName: user.lastName,
               country: 'US',
-              phoneNumber: user.phoneNumber || '',
+              phoneNumber: '',
               isCompany: false
             },
             pricing: {
@@ -288,7 +288,7 @@ export const googleSignIn = async (req, res) => {
               firstName: user.firstName,
               lastName: user.lastName,
               country: 'US',
-              phoneNumber: user.phoneNumber || '',
+              phoneNumber: '',
               isCompany: false
             },
             pricing: {
@@ -455,7 +455,7 @@ export const appleSignIn = async (req, res) => {
               firstName: existingUser.firstName || 'User',
               lastName: existingUser.lastName || 'User',
               country: 'US',
-              phoneNumber: existingUser.phoneNumber || '',
+              phoneNumber: '',
               isCompany: false
             },
             pricing: {

@@ -79,6 +79,12 @@ export const selectPlan = async (req, res) => {
 
     // Handle free plan selection - auto-activate immediately
     if (plan.price === 0) {
+      // Get user information to populate billing fields
+      const user = await User.findById(userId);
+      if (!user) {
+        return sendError(res, 'User not found', 404);
+      }
+
       const now = new Date();
       const trialEndDate = new Date(now.getTime() + (plan.trialDays * 24 * 60 * 60 * 1000));
       const endDate = new Date(now.getTime() + (plan.trialDays * 24 * 60 * 60 * 1000));
@@ -93,8 +99,8 @@ export const selectPlan = async (req, res) => {
         isTrialActive: true,
         paymentMethod: 'free',
         billingInfo: {
-          firstName: '',
-          lastName: '',
+          firstName: user.firstName || 'User',
+          lastName: user.lastName || 'User',
           country: 'US',
           phoneNumber: '',
           isCompany: false
