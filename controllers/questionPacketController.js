@@ -64,7 +64,7 @@ export const createQuestionPacket = async (req, res) => {
 
 export const getQuestionPackets = async (req, res) => {
   try {
-    const { subject, difficulty, status, category } = req.query;
+    const { subject, difficulty, status, category, minQuestions, maxQuestions } = req.query;
     
     let filter = {};
     
@@ -72,6 +72,13 @@ export const getQuestionPackets = async (req, res) => {
     if (difficulty) filter.difficultyLevel = difficulty;
     if (status) filter.status = status;
     if (category) filter.category = category;
+    
+    // Filter by number of questions
+    if (minQuestions || maxQuestions) {
+      filter.numberOfQuestions = {};
+      if (minQuestions) filter.numberOfQuestions.$gte = parseInt(minQuestions);
+      if (maxQuestions) filter.numberOfQuestions.$lte = parseInt(maxQuestions);
+    }
 
     const questionPackets = await QuestionPacket.find(filter)
       .sort({ createdAt: -1 });

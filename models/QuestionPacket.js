@@ -73,6 +73,12 @@ const questionPacketSchema = new mongoose.Schema({
       message: 'A question packet must contain at least 1 question'
     }
   },
+  numberOfQuestions: {
+    type: Number,
+    required: true,
+    default: 1,
+    min: 1
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -85,6 +91,12 @@ const questionPacketSchema = new mongoose.Schema({
 
 questionPacketSchema.pre('save', function(next) {
   this.updatedAt = new Date();
+  
+  // Auto-update numberOfQuestions based on questions array length
+  if (this.questions && Array.isArray(this.questions)) {
+    this.numberOfQuestions = this.questions.length;
+  }
+  
   next();
 });
 
@@ -92,6 +104,7 @@ questionPacketSchema.index({ subjectCategory: 1, difficultyLevel: 1 });
 questionPacketSchema.index({ subjectCategory: 1, status: 1 });
 questionPacketSchema.index({ status: 1 });
 questionPacketSchema.index({ category: 1 });
+questionPacketSchema.index({ numberOfQuestions: 1 });
 
 const QuestionPacket = mongoose.model('QuestionPacket', questionPacketSchema);
 
