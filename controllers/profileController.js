@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 import bcrypt from 'bcryptjs';
+import cloudinary from '../config/cloudinary.js';
 
 // Get user profile
 export const getUserProfile = async (req, res) => {
@@ -68,10 +69,22 @@ export const updateUserProfile = async (req, res) => {
       return sendError(res, 'User not found', 404);
     }
 
+    // Handle profile picture URL (could be Cloudinary or external)
+    if (profilePic !== undefined) {
+      // If a new Cloudinary URL is being set but already have one, delete the old one
+      if (profilePic && user.profilePic && user.profilePic.includes('cloudinary.com')) {
+        if (user.profilePic !== profilePic) {
+          await deleteCloudinaryImage(user.profilePic);
+        }
+      }
+      user.profilePic = profilePic || null;
+    } else {
+      // If no profilePic in request, don't modify existing profilePic
+    }
+
     // Update user fields
     user.firstName = firstName.trim();
     user.lastName = lastName.trim();
-    user.profilePic = profilePic || null;
 
     // Hash and update password if provided
     if (password && password.trim()) {
@@ -107,6 +120,104 @@ export const updateUserProfile = async (req, res) => {
   } catch (error) {
     console.error('Update profile error:', error);
     sendError(res, 'Internal server error while updating profile');
+  }
+};
+
+// Upload profile picture using Cloudinary
+export const uploadProfilePicture = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (!req.file) {
+      return sendError(res, 'No image file provided', 400);
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return sendError(res, 'User not found', 404);
+    }
+
+    // Delete old profile picture from Cloudinary if exists
+    if (user.profilePic && user.profilePic.includes('cloudinary.com')) {
+      await deleteCloudinaryImage(user.profilePic);
+    }
+
+    // Convert file to base64 for Cloudinary upload
+    const b64 = Buffer.from(req.file.buffer).toString('base64');
+    const dataURI = `data:${req.file.mimetype};base64,${b64}`;
+
+    // Upload to Cloudinary
+    const uploadResult = await cloudinary.uploader.upload(dataURI, {
+      public_id: `profile_pictures/${userId}_${Date.now()}`,
+      folder: 'khan-academy/profile_pictures',
+      resource_type: 'image',
+      transformation: [
+        { width: 500, height: 500, crop: 'fill', gravity: 'center' },
+        { quality: 'auto', fetch_format: 'auto' }
+      ]
+    });
+
+    // Update user profilePic with new Cloudinary URL
+    user.profilePic = uploadResult.secure_url;
+    await user.save();
+
+    sendSuccess(res, 'Profile picture uploaded successfully', {
+      profilePic: uploadResult.secure_url
+    });
+
+  } catch (error) {
+    console.error('Upload profile picture error:', error);
+    sendError(res, 'Internal server error while uploading profile picture');
+  }
+};
+
+// Delete profile picture
+export const deleteProfilePicture = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return sendError(res, 'User not found', 404);
+    }
+
+    if (!user.profilePic) {
+      return sendError(res, 'No profile picture to delete', 400);
+    }
+
+    // Delete from Cloudinary if it's a Cloudinary URL
+    if (user.profilePic.includes('cloudinary.com')) {
+      await deleteCloudinaryImage(user.profilePic);
+    }
+
+    // Clear profile picture from user record
+    user.profilePic = null;
+    await user.save();
+
+    sendSuccess(res, 'Profile picture deleted successfully');
+
+  } catch (error) {
+    console.error('Delete profile picture error:', error);
+    sendError(res, 'Internal server error while deleting profile picture');
+  }
+};
+
+// Helper function to delete image from Cloudinary
+const deleteCloudinaryImage = async (imageUrl) => {
+  try {
+    // Extract public_id from the URL
+    const splitUrl = imageUrl.split('/');
+    const publicIdWithFormat = splitUrl[splitUrl.length - 1];
+    const publicId = publicIdWithFormat.split('.')[0];
+    
+    if (splitUrl.length > 3) {
+      const folderPart = splitUrl[splitUrl.length - 2];
+      const fullPublicId = `${folderPart}/${publicId}`;
+      await cloudinary.uploader.destroy(fullPublicId);
+    }
+  } catch (error) {
+    console.log('Error deleting image from Cloudinary:', error);
+    throw error;
   }
 };
 
