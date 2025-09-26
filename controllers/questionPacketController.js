@@ -67,12 +67,11 @@ export const getQuestionPackets = async (req, res) => {
     
     let filter = {};
     
-    if (subject) filter.subject = subject;
+    if (subject) filter.subjectCategory = subject;
     if (difficulty) filter.difficultyLevel = difficulty;
     if (status) filter.status = status;
 
     const questionPackets = await QuestionPacket.find(filter)
-      .populate('subject', 'name description icon category')
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -94,8 +93,7 @@ export const getQuestionPacketById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const questionPacket = await QuestionPacket.findById(id)
-      .populate('subject', 'name description icon category');
+    const questionPacket = await QuestionPacket.findById(id);
 
     if (!questionPacket) {
       return res.status(404).json({
@@ -136,7 +134,7 @@ export const updateQuestionPacket = async (req, res) => {
       id,
       updateData,
       { new: true, runValidators: true }
-    ).populate('subject', 'name description icon category');
+    );
 
     if (!questionPacket) {
       return res.status(404).json({
@@ -252,37 +250,7 @@ export const submitQuestionPacketAnswers = async (req, res) => {
 
 
     let levelUpdated = false;
-    if (isCompleted) {
-      const userLevel = await UserLevel.findOne({
-        userId,
-        branchId: questionPacket.subject._id
-      });
-
-      if (userLevel) {
-
-        userLevel.currentLevel += 1;
-        
-
-        userLevel.completedLevels.push({
-          level: userLevel.currentLevel - 1,
-          completedAt: new Date(),
-          questionsAnswered: 10,
-          correctAnswers: 10,
-          totalQuestions: 10
-        });
-
-
-        userLevel.totalQuestionsAnswered += 10;
-        userLevel.totalCorrectAnswers += 10;
-
-        await userLevel.save();
-        levelUpdated = true;
-
-
-        questionPacketAnswer.levelUpdated = true;
-        await questionPacketAnswer.save();
-      }
-    }
+    // TODO: Implement user level tracking logic if needed
 
     res.status(200).json({
       success: true,
@@ -388,33 +356,8 @@ export const answerIndividualQuestion = async (req, res) => {
 
 
     let levelUpdated = false;
-    if (isPacketCompleted && allCorrect) {
-      const userLevel = await UserLevel.findOne({
-        userId,
-        branchId: questionPacket.subject._id
-      });
-
-      if (userLevel) {
-
-        userLevel.currentLevel += 1;
-        
-
-        userLevel.completedLevels.push({
-          level: userLevel.currentLevel - 1,
-          completedAt: new Date(),
-          questionsAnswered: questionPacket.questions.length,
-          correctAnswers: questionPacket.questions.length,
-          totalQuestions: questionPacket.questions.length
-        });
-
-
-        userLevel.totalQuestionsAnswered += questionPacket.questions.length;
-        userLevel.totalCorrectAnswers += questionPacket.questions.length;
-
-        await userLevel.save();
-        levelUpdated = true;
-      }
-    }
+    // TODO: Implement user level tracking logic for individual questions
+    // Consider mapping subjectCategory to user category if needed
 
     res.status(200).json({
       success: true,
