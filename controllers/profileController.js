@@ -7,7 +7,7 @@ export const getUserProfile = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const user = await User.findById(userId).select('-password -resetPasswordOTP');
+    const user = await User.findById(userId).select('-resetPasswordOTP -password');
     
     if (!user) {
       return sendError(res, 'User not found', 404);
@@ -15,13 +15,14 @@ export const getUserProfile = async (req, res) => {
 
     sendSuccess(res, 'Profile retrieved successfully', {
       user: {
-        _id: user._id,
+        profilePic: user.profilePic,
+        role: user.role,
+        email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        email: user.email,
-        role: user.role,
+        password: '', // Return empty string for password field (frontend will provide new password in edit)
+        _id: user._id,
         provider: user.provider,
-        profilePic: user.profilePic,
         isEmailVerified: user.isEmailVerified,
         lastLogin: user.lastLogin,
         createdAt: user.createdAt,
@@ -39,7 +40,7 @@ export const getUserProfile = async (req, res) => {
 export const updateUserProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { firstName, lastName, profilePic } = req.body;
+    const { firstName, lastName, profilePic, password } = req.body;
 
     // Validate required fields
     if (!firstName || !lastName) {
@@ -54,6 +55,13 @@ export const updateUserProfile = async (req, res) => {
       return sendError(res, 'Last name must be at least 2 characters long', 400);
     }
 
+    // Validate password if provided
+    if (password && password.trim()) {
+      if (password.length < 6) {
+        return sendError(res, 'Password must be at least 6 characters long', 400);
+      }
+    }
+
     const user = await User.findById(userId);
     
     if (!user) {
@@ -64,6 +72,13 @@ export const updateUserProfile = async (req, res) => {
     user.firstName = firstName.trim();
     user.lastName = lastName.trim();
     user.profilePic = profilePic || null;
+
+    // Hash and update password if provided
+    if (password && password.trim()) {
+      const salt = await bcrypt.genSalt(12);
+      const hashedPassword = await bcrypt.hash(password.trim(), salt);
+      user.password = hashedPassword;
+    }
 
     await user.save();
 
@@ -81,6 +96,7 @@ export const updateUserProfile = async (req, res) => {
         role: userResponse.role,
         provider: userResponse.provider,
         profilePic: userResponse.profilePic,
+        password: '', // Return empty string for password field
         isEmailVerified: userResponse.isEmailVerified,
         lastLogin: userResponse.lastLogin,
         createdAt: userResponse.createdAt,

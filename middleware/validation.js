@@ -79,6 +79,12 @@ const validateProfileUpdate = [
     .isLength({ min: 2, max: 50 })
     .withMessage('Last name must be between 2 and 50 characters'),
   
+  body('password')
+    .optional()
+    .trim()
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long'),
+  
   body('dateOfBirth')
     .optional()
     .isISO8601()
