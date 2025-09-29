@@ -14,7 +14,8 @@ import {
   cancelSubscription,
   refundPayment,
   verifyWebhookSignature,
-  getStripeEnvironment
+  getStripeEnvironment,
+  getStripeInstance
 } from '../config/stripe.js';
 import { 
   validatePaymentAmount, 
@@ -59,16 +60,82 @@ export const createStripePaymentIntent = async (req, res) => {
     }
 
     // Check if user already has an active subscription
-    const existingSubscription = await UserSubscription.findOne({
+    const existingActiveSubscription = await UserSubscription.findOne({
       userId,
       status: { $in: ['active', 'trial'] }
     });
 
+    // Check if user already has a pending subscription for the same plan
+    const existingPendingSubscription = await UserSubscription.findOne({
+      userId,
+      planId,
+      status: 'pending'
+    });
+
+    // If there's already a pending subscription for this plan, return the existing payment intent
+    if (existingPendingSubscription) {
+      // Check if the existing pending subscription has a valid payment intent
+      if (existingPendingSubscription.stripeDetails?.paymentIntentId) {
+        // Get the payment intent details from Stripe
+        const stripe = getStripeInstance();
+        try {
+          const paymentIntent = await stripe.paymentIntents.retrieve(
+            existingPendingSubscription.stripeDetails.paymentIntentId
+          );
+          
+          if (paymentIntent.status === 'requires_payment_method' || paymentIntent.status === 'requires_confirmation') {
+            return sendSuccess(res, 'Existing payment intent found', {
+              clientSecret: paymentIntent.client_secret,
+              paymentIntentId: paymentIntent.id,
+              customerId: existingPendingSubscription.stripeDetails.customerId,
+              localSubscriptionId: existingPendingSubscription._id,
+              amount: existingPendingSubscription.pricing.amountDueNow,
+              currency: plan.currency,
+              plan: {
+                name: plan.name,
+                features: plan.features
+              }
+            });
+          } else if (paymentIntent.status === 'succeeded') {
+            // Payment already succeeded, update subscription and return success
+            existingPendingSubscription.status = plan.trialDays > 0 ? 'trial' : 'active';
+            existingPendingSubscription.stripeDetails.paymentStatus = 'succeeded';
+            existingPendingSubscription.lastPaymentDate = new Date();
+            await existingPendingSubscription.save();
+            
+            return sendSuccess(res, 'Payment already processed successfully', {
+              subscription: {
+                ...existingPendingSubscription.toObject(),
+                daysRemaining: existingPendingSubscription.daysRemaining,
+                isExpired: existingPendingSubscription.isExpired,
+                isTrialExpired: existingPendingSubscription.isTrialExpired
+              },
+              paymentAlreadyProcessed: true
+            });
+          }
+        } catch (error) {
+          console.log('Payment intent not found or invalid, cleaning up and creating new one');
+          // Clean up the invalid pending subscription
+          await UserSubscription.findByIdAndDelete(existingPendingSubscription._id);
+        }
+      } else {
+        // Clean up pending subscription without payment intent
+        await UserSubscription.findByIdAndDelete(existingPendingSubscription._id);
+      }
+    }
+
+    // Clean up any other old pending subscriptions for this user
+    await UserSubscription.deleteMany({
+      userId,
+      status: 'pending',
+      planId: { $ne: planId }
+    });
+
     // Allow upgrade from free trial to paid plan
-    if (existingSubscription) {
+    if (existingActiveSubscription) {
       // Check if user is trying to upgrade from free trial to paid plan
-      const isUpgradingFromFreeTrial = existingSubscription.paymentMethod === 'free' && 
-                                       existingSubscription.planId.toString() !== planId && 
+      const isUpgradingFromFreeTrial = existingActiveSubscription.paymentMethod === 'free' && 
+                                       existingActiveSubscription.planId.toString() !== planId && 
                                        plan.price > 0;
       
       if (!isUpgradingFromFreeTrial) {
@@ -76,10 +143,10 @@ export const createStripePaymentIntent = async (req, res) => {
       }
       
       // Cancel the existing free trial subscription
-      existingSubscription.status = 'cancelled';
-      existingSubscription.cancelledAt = new Date();
-      existingSubscription.cancellationReason = 'Upgraded to paid plan';
-      await existingSubscription.save();
+      existingActiveSubscription.status = 'cancelled';
+      existingActiveSubscription.cancelledAt = new Date();
+      existingActiveSubscription.cancellationReason = 'Upgraded to paid plan';
+      await existingActiveSubscription.save();
     }
 
     // Calculate pricing
@@ -226,7 +293,52 @@ export const createStripePaymentIntent = async (req, res) => {
       nextBillingDate: plan.trialDays > 0 ? trialEndDate : endDate
     });
 
-    await subscription.save();
+    try {
+      await subscription.save();
+    } catch (error) {
+      // Handle duplicate key error - user already has a pending subscription for this plan
+      if (error.code === 11000) {
+        console.log('Duplicate subscription detected, finding existing one...');
+        
+        // Find the existing pending subscription
+        const existingPendingSubscription = await UserSubscription.findOne({
+          userId,
+          planId,
+          status: 'pending'
+        });
+
+        if (existingPendingSubscription) {
+          // Update the existing subscription with new payment intent details
+          existingPendingSubscription.stripeDetails = {
+            customerId: customerResult.customer.id,
+            paymentIntentId: paymentIntent.id,
+            paymentStatus: 'pending'
+          };
+          existingPendingSubscription.pricing = {
+            subtotal,
+            amountDueNow,
+            nextBillingAmount,
+            currency: plan.currency
+          };
+          await existingPendingSubscription.save();
+
+          // Return the existing subscription's payment intent
+          return sendSuccess(res, 'Payment intent updated for existing subscription', {
+            clientSecret: paymentIntent.client_secret,
+            paymentIntentId: paymentIntent.id,
+            customerId: customerResult.customer.id,
+            localSubscriptionId: existingPendingSubscription._id,
+            amount: amountDueNow,
+            currency: plan.currency,
+            plan: {
+              name: plan.name,
+              features: plan.features
+            }
+          });
+        }
+      }
+      throw error; // Re-throw if it's not a duplicate key error
+    }
 
     // Return payment intent details for frontend checkout
     sendSuccess(res, 'Stripe payment intent created successfully', {
@@ -270,6 +382,11 @@ export const confirmStripePayment = async (req, res) => {
 
     if (!subscription) {
       return sendError(res, 'Subscription not found or already processed', 404);
+    }
+
+    // IMPORTANT: Check if this subscription is already being processed to prevent race conditions
+    if (subscription.stripeDetails.paymentStatus === 'succeeded') {
+      return sendError(res, 'Payment already processed', 400);
     }
 
     // Check if using subscription-based payment
@@ -352,6 +469,15 @@ export const confirmStripePayment = async (req, res) => {
     subscription.lastPaymentDate = new Date();
 
     await subscription.save();
+    
+    console.log('✅ SUBSCRIPTION ACTIVATED SUCCESSFULLY:', {
+      subscriptionId: subscription._id,
+      userId: subscription.userId,
+      planId: subscription.planId,
+      status: subscription.status,
+      paymentIntentId: paymentIntent.id,
+      amount: paymentIntent.amount / 100
+    });
 
     // Populate plan details for response
     await subscription.populate('planId', 'name tagline price currency billingCycle features');

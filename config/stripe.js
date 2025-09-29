@@ -331,4 +331,5 @@ export const verifyWebhookSignature = (payload, signature, secret) => {
   }
 };
 
+export { getStripeInstance };
 export default getStripeInstance;

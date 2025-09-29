@@ -197,6 +197,29 @@ userSubscriptionSchema.index({ userId: 1, status: 1 });
 userSubscriptionSchema.index({ endDate: 1, status: 1 });
 userSubscriptionSchema.index({ trialEndDate: 1, isTrialActive: 1 });
 
+// Add unique constraint to prevent multiple active/trial subscriptions per user
+userSubscriptionSchema.index({ 
+  userId: 1, 
+  status: 1 
+}, { 
+  unique: true, 
+  partialFilterExpression: { 
+    status: { $in: ['active', 'trial'] } 
+  } 
+});
+
+// Add unique constraint to prevent multiple pending subscriptions per user for the same plan
+userSubscriptionSchema.index({ 
+  userId: 1, 
+  planId: 1, 
+  status: 1 
+}, { 
+  unique: true, 
+  partialFilterExpression: { 
+    status: 'pending' 
+  } 
+});
+
 userSubscriptionSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   next();
