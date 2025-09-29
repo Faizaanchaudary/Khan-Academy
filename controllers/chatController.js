@@ -1,9 +1,65 @@
 import Chat from '../models/Chat.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { sendSuccess, sendError } from '../utils/response.js';
+import OpenAI from 'openai';
 
-// Initialize Gemini AI
+// Initialize AI services
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+
+// Test function to check if Gemini API is working
+export const testGeminiAPI = async (req, res) => {
+  try {
+    console.log('Testing Gemini API...');
+    console.log('API Key exists:', !!process.env.GEMINI_API_KEY);
+    console.log('API Key length:', process.env.GEMINI_API_KEY?.length || 0);
+    
+    // Try the most basic model
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const result = await model.generateContent("Hello, can you respond with just 'Hello'?");
+    const response = await result.response;
+    const text = response.text();
+    
+    return sendSuccess(res, 'Gemini API test successful', { 
+      response: text,
+      model: 'gemini-pro'
+    });
+  } catch (error) {
+    console.error('Gemini API test failed:', error);
+    return sendError(res, `Gemini API test failed: ${error.message}`, 500);
+  }
+};
+
+// Test function to check if OpenAI API is working
+export const testOpenAIAPI = async (req, res) => {
+  try {
+    console.log('Testing OpenAI API...');
+    console.log('OpenAI API Key exists:', !!process.env.OPENAI_API_KEY);
+    console.log('OpenAI API Key length:', process.env.OPENAI_API_KEY?.length || 0);
+    
+    if (!openai || !process.env.OPENAI_API_KEY) {
+      return sendError(res, 'OpenAI API key not configured', 400);
+    }
+    
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: "Hello, can you respond with just 'Hello'?" }
+      ],
+      max_tokens: 50,
+      temperature: 0.7
+    });
+    
+    return sendSuccess(res, 'OpenAI API test successful', { 
+      response: completion.choices[0].message.content,
+      model: 'gpt-3.5-turbo'
+    });
+  } catch (error) {
+    console.error('OpenAI API test failed:', error);
+    return sendError(res, `OpenAI API test failed: ${error.message}`, 500);
+  }
+};
 
 // Create a new chat
 export const createNewChat = async (req, res) => {
@@ -28,8 +84,8 @@ export const createNewChat = async (req, res) => {
       }]
     });
 
-    // Get AI response from Gemini
-    const aiResponse = await getGeminiResponse(message);
+    // Get AI response from available providers
+    const aiResponse = await getAIResponse(message);
     
     // Add AI response to messages
     newChat.messages.push({
@@ -76,8 +132,8 @@ export const sendMessage = async (req, res) => {
     // Add user message
     await chat.addMessage('user', message.trim());
 
-    // Get AI response from Gemini
-    const aiResponse = await getGeminiResponse(message, chat.messages);
+    // Get AI response from available providers
+    const aiResponse = await getAIResponse(message, chat.messages);
 
     // Add AI response
     await chat.addMessage('assistant', aiResponse);
@@ -188,16 +244,85 @@ export const deleteChat = async (req, res) => {
   }
 };
 
-// Helper function to get Gemini AI response
-const getGeminiResponse = async (userMessage, chatHistory = []) => {
+// Helper function to get AI response from multiple providers
+const getAIResponse = async (userMessage, chatHistory = []) => {
+  // Debug: Check API keys
+  console.log('OpenAI API Key exists:', !!process.env.OPENAI_API_KEY);
+  console.log('OpenAI API Key length:', process.env.OPENAI_API_KEY?.length || 0);
+  console.log('Gemini API Key exists:', !!process.env.GEMINI_API_KEY);
+  
+  // Try OpenAI first if available
+  if (openai && process.env.OPENAI_API_KEY) {
+    try {
+      console.log('Attempting to use OpenAI GPT-3.5-turbo...');
+      
+      // Build conversation context
+      let conversationContext = `You are Gnosis AI, an educational AI assistant that helps students with practice questions, explanations, and learning. 
+      
+      Your responses should be:
+      - Educational and helpful
+      - Clear and well-structured
+      - Encouraging and supportive
+      - Formatted nicely with proper numbering for lists
+      - Include tips when appropriate`;
+      
+      // Add recent conversation history for context
+      const messages = [
+        { role: "system", content: conversationContext }
+      ];
+      
+      if (chatHistory.length > 0) {
+        const recentMessages = chatHistory.slice(-10);
+        recentMessages.forEach(msg => {
+          messages.push({
+            role: msg.role === 'user' ? 'user' : 'assistant',
+            content: msg.content
+          });
+        });
+      }
+      
+      messages.push({ role: "user", content: userMessage });
+      
+      const completion = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: messages,
+        max_tokens: 1000,
+        temperature: 0.7
+      });
+      
+      return completion.choices[0].message.content;
+    } catch (error) {
+      console.log('OpenAI failed:', error.message);
+    }
+  }
+  
+  // Fallback to Gemini if OpenAI fails or is not available
   try {
-    // Try different model names in order of preference
+    console.log('Attempting to use Gemini...');
+    
+    // Check if API key is available
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY is not set');
+    }
+    
+    // Try different Gemini model names in order of preference
     let model;
     try {
+      console.log('Attempting to use gemini-1.5-flash model...');
       model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     } catch (error) {
-      console.log('Trying gemini-1.5-pro...');
-      model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+      console.log('gemini-1.5-flash failed, trying gemini-1.5-pro...');
+      try {
+        model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+      } catch (proError) {
+        console.log('gemini-1.5-pro failed, trying gemini-1.0-pro...');
+        try {
+          model = genAI.getGenerativeModel({ model: "gemini-1.0-pro" });
+        } catch (v1Error) {
+          console.log('gemini-1.0-pro failed, trying gemini-pro...');
+          model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        }
+      }
     }
 
     // Build conversation context
@@ -227,7 +352,111 @@ const getGeminiResponse = async (userMessage, chatHistory = []) => {
     return response.text();
 
   } catch (error) {
-    console.error('Error getting Gemini response:', error);
-    return "I apologize, but I'm having trouble processing your request right now. Please try again in a moment.";
+    console.error('All AI services failed:', error);
+    
+    // Return a helpful educational response based on common requests
+    return getEducationalFallbackResponse(userMessage);
   }
+};
+
+// Fallback educational responses when AI is unavailable
+const getEducationalFallbackResponse = (userMessage) => {
+  const message = userMessage.toLowerCase();
+  
+  // Math-related responses
+  if (message.includes('algebra') || message.includes('math') || message.includes('equation')) {
+    return `I'd love to help you with algebra! Here are some great resources:
+
+📚 **Algebra Topics to Study:**
+1. Linear equations and inequalities
+2. Quadratic equations
+3. Polynomials and factoring
+4. Functions and graphs
+5. Systems of equations
+
+🔢 **Practice Problems:**
+- Start with basic linear equations: 2x + 3 = 7
+- Try quadratic equations: x² - 5x + 6 = 0
+- Practice word problems with real-world scenarios
+
+💡 **Study Tips:**
+- Work through problems step by step
+- Check your answers by substituting back
+- Practice daily for better retention
+- Use graphing to visualize functions
+
+Would you like me to help with a specific algebra topic?`;
+  }
+  
+  // Science-related responses
+  if (message.includes('science') || message.includes('physics') || message.includes('chemistry') || message.includes('biology')) {
+    return `Science is fascinating! Here's how I can help:
+
+🔬 **Science Subjects:**
+- **Physics**: Motion, forces, energy, waves
+- **Chemistry**: Atoms, molecules, reactions, bonding
+- **Biology**: Cells, genetics, evolution, ecosystems
+
+📖 **Study Strategies:**
+- Read actively and take notes
+- Create concept maps
+- Practice with real examples
+- Connect theory to real-world applications
+
+🧪 **Hands-on Learning:**
+- Try simple experiments at home
+- Use online simulations
+- Watch educational videos
+- Join study groups
+
+What specific science topic would you like to explore?`;
+  }
+  
+  // General study help
+  if (message.includes('study') || message.includes('learn') || message.includes('help')) {
+    return `I'm here to help you learn! Here are some effective study strategies:
+
+📝 **Study Techniques:**
+1. **Active Reading**: Summarize each paragraph
+2. **Spaced Repetition**: Review material over time
+3. **Practice Testing**: Quiz yourself regularly
+4. **Elaboration**: Explain concepts in your own words
+
+🎯 **Goal Setting:**
+- Set specific, achievable goals
+- Break large topics into smaller chunks
+- Track your progress
+- Celebrate small wins
+
+⏰ **Time Management:**
+- Use the Pomodoro Technique (25 min focus, 5 min break)
+- Create a study schedule
+- Find your peak learning times
+- Eliminate distractions
+
+What subject are you working on? I can provide more specific guidance!`;
+  }
+  
+  // Default helpful response
+  return `I'm currently experiencing technical difficulties, but I'm still here to help you learn! 
+
+🎓 **How I Can Help:**
+- Provide study strategies and tips
+- Suggest learning resources
+- Help break down complex topics
+- Offer motivation and encouragement
+
+📚 **Popular Study Topics:**
+- Mathematics (Algebra, Calculus, Statistics)
+- Sciences (Physics, Chemistry, Biology)
+- Languages and Literature
+- History and Social Studies
+
+💡 **Quick Tips:**
+- Take breaks every 25-30 minutes
+- Use active learning techniques
+- Practice regularly
+- Ask questions when confused
+
+What would you like to learn about today? I'll do my best to help even without the AI assistant!`;
 };

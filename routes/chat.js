@@ -4,7 +4,9 @@ import {
   sendMessage, 
   getRecentChats, 
   getChatById, 
-  deleteChat 
+  deleteChat,
+  testGeminiAPI,
+  testOpenAIAPI
 } from '../controllers/chatController.js';
 import { authenticate } from '../middleware/auth.js';
 import { body, param, query, validationResult } from 'express-validator';
@@ -23,6 +25,18 @@ const validateRequest = (req, res, next) => {
   }
   next();
 };
+
+// Test Gemini API
+router.get('/test-gemini',
+  authenticate,
+  testGeminiAPI
+);
+
+// Test OpenAI API
+router.get('/test-openai',
+  authenticate,
+  testOpenAIAPI
+);
 
 // Get recent chats (must come before /:chatId route)
 router.get('/recent',
