@@ -277,6 +277,7 @@ export const getStudentReviews = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const reviews = await Review.find({ studentId })
+      .populate('studentId', 'firstName lastName profilePic')
       .populate('adminId', 'firstName lastName')
       .sort({ createdAt: -1 })
       .skip(skip)
