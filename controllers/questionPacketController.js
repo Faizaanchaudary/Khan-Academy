@@ -3,6 +3,21 @@ import UserLevel from '../models/UserLevel.js';
 import QuestionPacketAnswer from '../models/QuestionPacketAnswer.js';
 import UserAnswer from '../models/UserAnswer.js';
 
+// Utility function to calculate progress for a question packet
+const calculateProgress = (questions) => {
+  const current = questions ? questions.length : 0;
+  const max = 10;
+  
+  return {
+    current,
+    max,
+    percentage: current > 0 ? Math.round((current / max) * 100) : 0,
+    isComplete: current >= max,
+    status: current === 0 ? 'empty' : 
+            current < max ? 'incomplete' : 'complete'
+  };
+};
+
 
 export const createQuestionPacket = async (req, res) => {
   try {
@@ -45,10 +60,16 @@ export const createQuestionPacket = async (req, res) => {
 
     await questionPacket.save();
 
+    // Add progress information
+    const packetWithProgress = {
+      ...questionPacket.toObject(),
+      progress: calculateProgress(questionPacket.questions)
+    };
+
     res.status(201).json({
       success: true,
       message: 'Question packet created successfully',
-      data: questionPacket
+      data: packetWithProgress
     });
   } catch (error) {
     console.error('Error creating question packet:', error);
@@ -81,11 +102,18 @@ export const getQuestionPackets = async (req, res) => {
     }
 
     const questionPackets = await QuestionPacket.find(filter)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean(); // Use lean() for better performance
+
+    // Add progress information to each packet
+    const packetsWithProgress = questionPackets.map(packet => ({
+      ...packet,
+      progress: calculateProgress(packet.questions)
+    }));
 
     res.status(200).json({
       success: true,
-      data: questionPackets
+      data: packetsWithProgress
     });
   } catch (error) {
     console.error('Error fetching question packets:', error);
@@ -102,7 +130,7 @@ export const getQuestionPacketById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const questionPacket = await QuestionPacket.findById(id);
+    const questionPacket = await QuestionPacket.findById(id).lean();
 
     if (!questionPacket) {
       return res.status(404).json({
@@ -111,9 +139,15 @@ export const getQuestionPacketById = async (req, res) => {
       });
     }
 
+    // Add progress information
+    const packetWithProgress = {
+      ...questionPacket,
+      progress: calculateProgress(questionPacket.questions)
+    };
+
     res.status(200).json({
       success: true,
-      data: questionPacket
+      data: packetWithProgress
     });
   } catch (error) {
     console.error('Error fetching question packet:', error);
@@ -146,10 +180,16 @@ export const updateQuestionPacket = async (req, res) => {
       });
     }
 
+    // Add progress information
+    const packetWithProgress = {
+      ...questionPacket.toObject(),
+      progress: calculateProgress(questionPacket.questions)
+    };
+
     res.status(200).json({
       success: true,
       message: 'Question packet updated successfully',
-      data: questionPacket
+      data: packetWithProgress
     });
   } catch (error) {
     console.error('Error updating question packet:', error);
@@ -486,10 +526,16 @@ export const saveAsDraft = async (req, res) => {
 
     await questionPacket.save();
 
+    // Add progress information
+    const packetWithProgress = {
+      ...questionPacket.toObject(),
+      progress: calculateProgress(questionPacket.questions)
+    };
+
     res.status(201).json({
       success: true,
       message: 'Question packet saved as draft',
-      data: questionPacket
+      data: packetWithProgress
     });
   } catch (error) {
     console.error('Error saving draft:', error);

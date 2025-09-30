@@ -100,6 +100,25 @@ questionPacketSchema.pre('save', function(next) {
   next();
 });
 
+// Virtual field for progress calculation
+questionPacketSchema.virtual('progress').get(function() {
+  const totalQuestions = this.questions ? this.questions.length : 0;
+  const maxQuestions = 10; // Standard maximum for progress calculation
+  
+  return {
+    current: totalQuestions,
+    max: maxQuestions,
+    percentage: totalQuestions > 0 ? Math.round((totalQuestions / maxQuestions) * 100) : 0,
+    isComplete: totalQuestions >= maxQuestions,
+    status: totalQuestions === 0 ? 'empty' : 
+            totalQuestions < maxQuestions ? 'incomplete' : 'complete'
+  };
+});
+
+// Ensure virtual fields are included in JSON output
+questionPacketSchema.set('toJSON', { virtuals: true });
+questionPacketSchema.set('toObject', { virtuals: true });
+
 questionPacketSchema.index({ subjectCategory: 1, difficultyLevel: 1 });
 questionPacketSchema.index({ subjectCategory: 1, status: 1 });
 questionPacketSchema.index({ status: 1 });

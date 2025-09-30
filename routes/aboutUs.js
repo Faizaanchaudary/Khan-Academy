@@ -8,9 +8,11 @@ import {
   getAboutUsPageData,
   addTeamMember,
   updateTeamMember,
-  deleteTeamMember
+  deleteTeamMember,
+  uploadTeamMemberImage
 } from '../controllers/aboutUsController.js';
 import { authenticate } from '../middleware/auth.js';
+import { uploadProfilePicture } from '../middleware/upload.js';
 
 const router = express.Router();
 
@@ -26,5 +28,6 @@ router.delete('/:sectionType', authenticate, deleteAboutUsSection);
 router.post('/:sectionType/team-members', authenticate, addTeamMember);
 router.put('/:sectionType/team-members/:memberId', authenticate, updateTeamMember);
 router.delete('/:sectionType/team-members/:memberId', authenticate, deleteTeamMember);
+router.post('/:sectionType/team-members/:memberId/upload-image', authenticate, uploadProfilePicture, uploadTeamMemberImage);
 
 export default router;

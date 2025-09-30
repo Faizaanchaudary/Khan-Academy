@@ -1,5 +1,6 @@
 import AboutUs from '../models/AboutUs.js';
 import { sendSuccess, sendError } from '../utils/response.js';
+import { uploadTeamMemberImage as uploadImageToCloudinary, deleteTeamMemberImage, extractPublicIdFromUrl } from '../utils/cloudinaryUtils.js';
 
 export const getAllAboutUsSections = async (req, res) => {
   try {
@@ -151,7 +152,7 @@ export const getAboutUsPageData = async (req, res) => {
 export const addTeamMember = async (req, res) => {
   try {
     const { sectionType } = req.params;
-    const { name, role, image, bio } = req.body;
+    const { name, role, bio } = req.body;
 
     if (!name || !role) {
       return sendError(res, 'Name and role are required', 400);
@@ -166,7 +167,7 @@ export const addTeamMember = async (req, res) => {
     const newTeamMember = {
       name,
       role,
-      image,
+      image: '', // Will be set if image is uploaded
       bio
     };
 
@@ -177,6 +178,61 @@ export const addTeamMember = async (req, res) => {
   } catch (error) {
     console.error('Add team member error:', error);
     sendError(res, 'Internal server error while adding team member');
+  }
+};
+
+export const uploadTeamMemberImage = async (req, res) => {
+  try {
+    const { sectionType, memberId } = req.params;
+
+    if (!req.file) {
+      return sendError(res, 'No image file provided', 400);
+    }
+
+    const section = await AboutUs.findOne({ section: sectionType });
+
+    if (!section) {
+      return sendError(res, 'About Us section not found', 404);
+    }
+
+    const memberIndex = section.teamMembers.findIndex(member => member._id.toString() === memberId);
+
+    if (memberIndex === -1) {
+      return sendError(res, 'Team member not found', 404);
+    }
+
+    const teamMember = section.teamMembers[memberIndex];
+    
+    // Delete old image if exists
+    if (teamMember.image) {
+      try {
+        const publicId = extractPublicIdFromUrl(teamMember.image);
+        if (publicId) {
+          await deleteTeamMemberImage(publicId);
+        }
+      } catch (deleteError) {
+        console.warn('Could not delete old image:', deleteError.message);
+      }
+    }
+
+    // Upload new image
+    console.log('Uploading image for team member:', teamMember.name);
+    const uploadResult = await uploadImageToCloudinary(req.file.buffer, teamMember.name);
+    console.log('Upload result:', uploadResult);
+    
+    // Update team member with new image URL
+    section.teamMembers[memberIndex].image = uploadResult.secure_url;
+    console.log('Updated team member image URL:', section.teamMembers[memberIndex].image);
+    await section.save();
+    console.log('Section saved successfully');
+
+    sendSuccess(res, 'Team member image uploaded successfully', { 
+      teamMember: section.teamMembers[memberIndex],
+      imageUrl: uploadResult.secure_url
+    });
+  } catch (error) {
+    console.error('Upload team member image error:', error);
+    sendError(res, 'Internal server error while uploading team member image');
   }
 };
 
@@ -197,9 +253,25 @@ export const updateTeamMember = async (req, res) => {
       return sendError(res, 'Team member not found', 404);
     }
 
+    const teamMember = section.teamMembers[memberIndex];
+    const oldImage = teamMember.image;
+
     if (name) section.teamMembers[memberIndex].name = name;
     if (role) section.teamMembers[memberIndex].role = role;
-    if (image !== undefined) section.teamMembers[memberIndex].image = image;
+    if (image !== undefined) {
+      // If image is being removed or changed, delete old image from Cloudinary
+      if (oldImage && (image === '' || image !== oldImage)) {
+        try {
+          const publicId = extractPublicIdFromUrl(oldImage);
+          if (publicId) {
+            await deleteTeamMemberImage(publicId);
+          }
+        } catch (deleteError) {
+          console.warn('Could not delete old image:', deleteError.message);
+        }
+      }
+      section.teamMembers[memberIndex].image = image;
+    }
     if (bio !== undefined) section.teamMembers[memberIndex].bio = bio;
 
     await section.save();
@@ -225,6 +297,20 @@ export const deleteTeamMember = async (req, res) => {
 
     if (memberIndex === -1) {
       return sendError(res, 'Team member not found', 404);
+    }
+
+    const teamMember = section.teamMembers[memberIndex];
+    
+    // Delete image from Cloudinary if exists
+    if (teamMember.image) {
+      try {
+        const publicId = extractPublicIdFromUrl(teamMember.image);
+        if (publicId) {
+          await deleteTeamMemberImage(publicId);
+        }
+      } catch (deleteError) {
+        console.warn('Could not delete team member image:', deleteError.message);
+      }
     }
 
     section.teamMembers.splice(memberIndex, 1);
