@@ -21,6 +21,7 @@ import paypalRoutes from './routes/paypal.js';
 import stripeRoutes from './routes/stripe.js';
 import planSelectionRoutes from './routes/planSelection.js';
 import profileRoutes from './routes/profile.js';
+import dashboardRoutes from './routes/dashboard.js';
 
 
 const app = express();
@@ -58,6 +59,7 @@ app.use('/api/paypal', paypalRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/plan-selection', planSelectionRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 
 
