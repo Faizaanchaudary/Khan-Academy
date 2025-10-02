@@ -68,6 +68,12 @@ export const getDashboardStats = async (req, res) => {
       .select('title createdAt studentId')
       .lean();
 
+    // Get most recent question packet
+    const mostRecentQuestionPacket = await QuestionPacket.findOne()
+      .sort({ createdAt: -1 })
+      .select('packetTitle createdAt')
+      .lean();
+
     // Compile dashboard statistics
     const dashboardStats = {
       overview: {
@@ -119,6 +125,10 @@ export const getDashboardStats = async (req, res) => {
           submittedBy: mostRecentReview.studentId ? `${mostRecentReview.studentId.firstName} ${mostRecentReview.studentId.lastName}` : 'Unknown User',
           profilePic: mostRecentReview.studentId ? mostRecentReview.studentId.profilePic : null,
           submittedAt: mostRecentReview.createdAt
+        } : null,
+        mostRecentQuestionPacket: mostRecentQuestionPacket ? {
+          packetTitle: mostRecentQuestionPacket.packetTitle,
+          createdAt: mostRecentQuestionPacket.createdAt
         } : null
       },
       lastUpdated: new Date()
