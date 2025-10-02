@@ -397,12 +397,17 @@ export const getStudentOverview = async (req, res) => {
     const studentIds = students.map(student => student._id);
     const userLevels = await UserLevel.find({ userId: { $in: studentIds } })
       .populate('branchId', 'name category')
-      .select('userId currentLevel branchId');
+      .select('userId currentLevel branchId category');
 
-    // Create a map of userId to their highest level
+    // Create a map of userId to their highest level and progress
     const userHighestLevels = {};
+    const userProgress = {};
+    
     userLevels.forEach(level => {
       const userId = level.userId.toString();
+      const category = level.branchId.category;
+      
+      // Track highest level across all branches
       if (!userHighestLevels[userId] || level.currentLevel > userHighestLevels[userId].currentLevel) {
         userHighestLevels[userId] = {
           currentLevel: level.currentLevel,
@@ -410,15 +415,43 @@ export const getStudentOverview = async (req, res) => {
           category: level.branchId.category
         };
       }
+      
+      // Initialize progress tracking for this user
+      if (!userProgress[userId]) {
+        userProgress[userId] = {
+          math: 0,
+          reading_writing: 0,
+          total: 0
+        };
+      }
+      
+      // Add progress based on current level (1% per level)
+      // currentLevel represents the level they're currently on, so completed levels = currentLevel - 1
+      const completedLevels = Math.max(0, level.currentLevel - 1);
+      userProgress[userId][category] += completedLevels;
+    });
+    
+    // Calculate total progress and average for each user
+    Object.keys(userProgress).forEach(userId => {
+      const progress = userProgress[userId];
+      progress.total = progress.math + progress.reading_writing;
+      progress.average = progress.total; // Sum of math and reading_writing
     });
 
-    // Format the response with student details and highest level
+    // Format the response with student details, highest level, and progress
     const studentsWithLevels = students.map(student => {
       const studentId = student._id.toString();
       const highestLevel = userHighestLevels[studentId] || {
         currentLevel: 0,
         branchName: 'No progress',
         category: null
+      };
+      
+      const progress = userProgress[studentId] || {
+        math: 0,
+        reading_writing: 0,
+        total: 0,
+        average: 0
       };
 
       return {
@@ -431,6 +464,12 @@ export const getStudentOverview = async (req, res) => {
         highestLevel: highestLevel.currentLevel,
         highestLevelBranch: highestLevel.branchName,
         category: highestLevel.category,
+        progress: {
+          math: progress.math,
+          reading_writing: progress.reading_writing,
+          total: progress.total,
+          average: Math.round(progress.average * 100) / 100 // Round to 2 decimal places
+        },
         createdAt: student.createdAt
       };
     });
