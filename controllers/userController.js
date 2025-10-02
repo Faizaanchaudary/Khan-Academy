@@ -1,4 +1,6 @@
 import User from '../models/User.js';
+import UserLevel from '../models/UserLevel.js';
+import Branch from '../models/Branch.js';
 import bcrypt from 'bcryptjs';
 
 export const getUsers = async (req, res) => {
@@ -342,6 +344,118 @@ export const updatePassword = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error while updating password'
+    });
+  }
+};
+
+// Helper function to format time ago
+const getTimeAgo = (date) => {
+  if (!date) return 'Never';
+  
+  const now = new Date();
+  const diffInMs = now - new Date(date);
+  const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+  const diffInWeeks = Math.floor(diffInMs / (1000 * 60 * 60 * 24 * 7));
+  const diffInMonths = Math.floor(diffInMs / (1000 * 60 * 60 * 24 * 30));
+  const diffInYears = Math.floor(diffInMs / (1000 * 60 * 60 * 24 * 365));
+
+  if (diffInMinutes < 1) return 'Just now';
+  if (diffInMinutes < 60) return `${diffInMinutes} min ago`;
+  if (diffInHours < 24) return `${diffInHours} hr ago`;
+  if (diffInDays < 7) return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
+  if (diffInWeeks < 4) return `${diffInWeeks} week${diffInWeeks > 1 ? 's' : ''} ago`;
+  if (diffInMonths < 12) return `${diffInMonths} month${diffInMonths > 1 ? 's' : ''} ago`;
+  return `${diffInYears} year${diffInYears > 1 ? 's' : ''} ago`;
+};
+
+export const getStudentOverview = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search } = req.query;
+
+    const query = { role: 'student' };
+
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Get all students with basic info
+    const students = await User.find(query)
+      .select('firstName lastName email profilePic lastOnline createdAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    // Get user levels for all students
+    const studentIds = students.map(student => student._id);
+    const userLevels = await UserLevel.find({ userId: { $in: studentIds } })
+      .populate('branchId', 'name category')
+      .select('userId currentLevel branchId');
+
+    // Create a map of userId to their highest level
+    const userHighestLevels = {};
+    userLevels.forEach(level => {
+      const userId = level.userId.toString();
+      if (!userHighestLevels[userId] || level.currentLevel > userHighestLevels[userId].currentLevel) {
+        userHighestLevels[userId] = {
+          currentLevel: level.currentLevel,
+          branchName: level.branchId.name,
+          category: level.branchId.category
+        };
+      }
+    });
+
+    // Format the response with student details and highest level
+    const studentsWithLevels = students.map(student => {
+      const studentId = student._id.toString();
+      const highestLevel = userHighestLevels[studentId] || {
+        currentLevel: 0,
+        branchName: 'No progress',
+        category: null
+      };
+
+      return {
+        _id: student._id,
+        firstName: student.firstName,
+        lastName: student.lastName,
+        email: student.email,
+        profilePic: student.profilePic,
+        lastOnline: getTimeAgo(student.lastOnline),
+        highestLevel: highestLevel.currentLevel,
+        highestLevelBranch: highestLevel.branchName,
+        category: highestLevel.category,
+        createdAt: student.createdAt
+      };
+    });
+
+    const total = await User.countDocuments(query);
+
+    res.json({
+      success: true,
+      message: 'Student overview retrieved successfully',
+      data: {
+        students: studentsWithLevels,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(total / parseInt(limit)),
+          totalStudents: total,
+          hasNextPage: skip + students.length < total,
+          hasPrevPage: parseInt(page) > 1
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get student overview error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error while retrieving student overview'
     });
   }
 };

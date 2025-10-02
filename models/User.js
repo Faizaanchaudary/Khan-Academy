@@ -47,6 +47,10 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  lastOnline: {
+    type: Date,
+    default: Date.now
+  },
   resetPasswordOTP: {
     code: {
       type: String,

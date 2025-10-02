@@ -5,7 +5,8 @@ import {
   updateUser,
   updatePassword,
   getUserProfile,
-  getStudents
+  getStudents,
+  getStudentOverview
 } from '../controllers/userController.js';
 import { authenticate } from '../middleware/auth.js';
 
@@ -15,6 +16,7 @@ router.use(authenticate);
 
 router.get('/profile', getUserProfile);
 router.get('/students', getStudents);
+router.get('/student/overview', getStudentOverview);
 router.get('/', getUsers);
 router.get('/:id', getUserById);
 router.put('/:id', updateUser);
