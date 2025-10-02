@@ -5,7 +5,6 @@ import {
   approveReview,
   declineReview,
   getStudentReviews,
-  getAdmins,
   getReviewsByStatus,
   getReviewCounts,
   getAllReviewsWithCounts
@@ -23,7 +22,6 @@ router.use(authenticate);
 // Student routes
 router.post('/', validateReviewSubmission, addReview);
 router.get('/my-reviews', getStudentReviews);
-router.get('/admins', getAdmins);
 
 // Admin routes - Status filtering
 router.get('/counts', getReviewCounts);

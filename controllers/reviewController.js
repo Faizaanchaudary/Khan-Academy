@@ -3,7 +3,7 @@ import User from '../models/User.js';
 
 export const addReview = async (req, res) => {
   try {
-    const { rating, title, comment, adminId } = req.body;
+    const { rating, title, comment } = req.body;
     const studentId = req.user._id;
 
     // Check if user is a student
@@ -14,34 +14,16 @@ export const addReview = async (req, res) => {
       });
     }
 
-    // Validate that the adminId exists and is actually an admin
-    const admin = await User.findById(adminId);
-    if (!admin) {
-      return res.status(404).json({
-        success: false,
-        message: 'Admin not found'
-      });
-    }
-
-    if (admin.role !== 'admin') {
-      return res.status(400).json({
-        success: false,
-        message: 'Selected user is not an admin'
-      });
-    }
-
     const review = await Review.create({
       studentId,
-      adminId,
       rating,
       title: title.trim(),
       comment: comment.trim(),
       status: 'pending'
     });
 
-    // Populate student and admin details
+    // Populate student details
     await review.populate('studentId', 'firstName lastName profilePic');
-    await review.populate('adminId', 'firstName lastName');
 
     res.status(201).json({
       success: true,
@@ -62,13 +44,6 @@ export const addReview = async (req, res) => {
       });
     }
 
-    if (error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid admin ID format'
-      });
-    }
-
     res.status(500).json({
       success: false,
       message: 'Internal server error while submitting review'
@@ -79,7 +54,6 @@ export const addReview = async (req, res) => {
 export const getReviews = async (req, res) => {
   try {
     const { status = 'pending', page = 1, limit = 10 } = req.query;
-    const adminId = req.user._id;
 
     // Check if user is admin
     if (req.user.role !== 'admin') {
@@ -89,13 +63,12 @@ export const getReviews = async (req, res) => {
       });
     }
 
-    // Only show reviews for this specific admin
-    const query = { status, adminId };
+    // Get all reviews with the specified status
+    const query = { status };
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const reviews = await Review.find(query)
       .populate('studentId', 'firstName lastName profilePic')
-      .populate('adminId', 'firstName lastName')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -128,7 +101,6 @@ export const getReviews = async (req, res) => {
 export const approveReview = async (req, res) => {
   try {
     const { id } = req.params;
-    const adminId = req.user._id;
 
     // Check if user is admin
     if (req.user.role !== 'admin') {
@@ -146,14 +118,6 @@ export const approveReview = async (req, res) => {
       });
     }
 
-    // Check if this review is assigned to this admin
-    if (review.adminId.toString() !== adminId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'You can only approve reviews assigned to you'
-      });
-    }
-
     if (review.status !== 'pending') {
       return res.status(400).json({
         success: false,
@@ -165,9 +129,8 @@ export const approveReview = async (req, res) => {
     review.approvedAt = new Date();
     await review.save();
 
-    // Populate details
+    // Populate student details
     await review.populate('studentId', 'firstName lastName profilePic');
-    await review.populate('adminId', 'firstName lastName');
 
     res.json({
       success: true,
@@ -196,7 +159,6 @@ export const approveReview = async (req, res) => {
 export const declineReview = async (req, res) => {
   try {
     const { id } = req.params;
-    const adminId = req.user._id;
 
     // Check if user is admin
     if (req.user.role !== 'admin') {
@@ -214,14 +176,6 @@ export const declineReview = async (req, res) => {
       });
     }
 
-    // Check if this review is assigned to this admin
-    if (review.adminId.toString() !== adminId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'You can only decline reviews assigned to you'
-      });
-    }
-
     if (review.status !== 'pending') {
       return res.status(400).json({
         success: false,
@@ -233,9 +187,8 @@ export const declineReview = async (req, res) => {
     review.declinedAt = new Date();
     await review.save();
 
-    // Populate details
+    // Populate student details
     await review.populate('studentId', 'firstName lastName profilePic');
-    await review.populate('adminId', 'firstName lastName');
 
     res.json({
       success: true,
@@ -278,7 +231,6 @@ export const getStudentReviews = async (req, res) => {
 
     const reviews = await Review.find({ studentId })
       .populate('studentId', 'firstName lastName profilePic')
-      .populate('adminId', 'firstName lastName')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -308,41 +260,11 @@ export const getStudentReviews = async (req, res) => {
   }
 };
 
-export const getAdmins = async (req, res) => {
-  try {
-    // Check if user is a student
-    if (req.user.role !== 'student') {
-      return res.status(403).json({
-        success: false,
-        message: 'Only students can view admin list'
-      });
-    }
-
-    const admins = await User.find({ role: 'admin' })
-      .select('_id firstName lastName profilePic')
-      .sort({ firstName: 1 });
-
-    res.json({
-      success: true,
-      message: 'Admins retrieved successfully',
-      data: {
-        admins
-      }
-    });
-  } catch (error) {
-    console.error('Get admins error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error while retrieving admins'
-    });
-  }
-};
 
 export const getReviewsByStatus = async (req, res) => {
   try {
     const { status } = req.params;
     const { page = 1, limit = 10 } = req.query;
-    const adminId = req.user._id;
 
     // Check if user is admin
     if (req.user.role !== 'admin') {
@@ -361,13 +283,12 @@ export const getReviewsByStatus = async (req, res) => {
       });
     }
 
-    // Only show reviews for this specific admin
-    const query = { status, adminId };
+    // Get all reviews with the specified status
+    const query = { status };
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const reviews = await Review.find(query)
       .populate('studentId', 'firstName lastName profilePic')
-      .populate('adminId', 'firstName lastName')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -400,8 +321,6 @@ export const getReviewsByStatus = async (req, res) => {
 
 export const getReviewCounts = async (req, res) => {
   try {
-    const adminId = req.user._id;
-
     // Check if user is admin
     if (req.user.role !== 'admin') {
       return res.status(403).json({
@@ -412,9 +331,9 @@ export const getReviewCounts = async (req, res) => {
 
     // Get counts for each status
     const [pendingCount, approvedCount, declinedCount] = await Promise.all([
-      Review.countDocuments({ status: 'pending', adminId }),
-      Review.countDocuments({ status: 'approved', adminId }),
-      Review.countDocuments({ status: 'declined', adminId })
+      Review.countDocuments({ status: 'pending' }),
+      Review.countDocuments({ status: 'approved' }),
+      Review.countDocuments({ status: 'declined' })
     ]);
 
     const totalCount = pendingCount + approvedCount + declinedCount;
@@ -443,7 +362,6 @@ export const getReviewCounts = async (req, res) => {
 export const getAllReviewsWithCounts = async (req, res) => {
   try {
     const { status = 'pending', page = 1, limit = 10 } = req.query;
-    const adminId = req.user._id;
 
     // Check if user is admin
     if (req.user.role !== 'admin') {
@@ -464,20 +382,19 @@ export const getAllReviewsWithCounts = async (req, res) => {
 
     // Get counts for all statuses
     const [pendingCount, approvedCount, declinedCount] = await Promise.all([
-      Review.countDocuments({ status: 'pending', adminId }),
-      Review.countDocuments({ status: 'approved', adminId }),
-      Review.countDocuments({ status: 'declined', adminId })
+      Review.countDocuments({ status: 'pending' }),
+      Review.countDocuments({ status: 'approved' }),
+      Review.countDocuments({ status: 'declined' })
     ]);
 
     const totalCount = pendingCount + approvedCount + declinedCount;
 
     // Get reviews for the requested status
-    const query = { status, adminId };
+    const query = { status };
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const reviews = await Review.find(query)
       .populate('studentId', 'firstName lastName profilePic')
-      .populate('adminId', 'firstName lastName')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
