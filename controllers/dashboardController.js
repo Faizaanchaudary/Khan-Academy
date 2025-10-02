@@ -55,6 +55,19 @@ export const getDashboardStats = async (req, res) => {
       createdAt: { $gte: sevenDaysAgo }
     });
 
+    // Get most recent registered student
+    const mostRecentStudent = await User.findOne({ role: 'student' })
+      .sort({ createdAt: -1 })
+      .select('firstName lastName email profilePic createdAt')
+      .lean();
+
+    // Get most recent submitted review
+    const mostRecentReview = await Review.findOne()
+      .sort({ createdAt: -1 })
+      .populate('studentId', 'firstName lastName profilePic')
+      .select('title createdAt studentId')
+      .lean();
+
     // Compile dashboard statistics
     const dashboardStats = {
       overview: {
@@ -93,6 +106,20 @@ export const getDashboardStats = async (req, res) => {
         newStudents: recentStudents,
         newReviews: recentReviews,
         newQuestionPackets: recentQuestionPackets
+      },
+      recentData: {
+        mostRecentStudent: mostRecentStudent ? {
+          name: `${mostRecentStudent.firstName} ${mostRecentStudent.lastName}`,
+          email: mostRecentStudent.email,
+          profilePic: mostRecentStudent.profilePic,
+          registeredAt: mostRecentStudent.createdAt
+        } : null,
+        mostRecentReview: mostRecentReview ? {
+          title: mostRecentReview.title,
+          submittedBy: mostRecentReview.studentId ? `${mostRecentReview.studentId.firstName} ${mostRecentReview.studentId.lastName}` : 'Unknown User',
+          profilePic: mostRecentReview.studentId ? mostRecentReview.studentId.profilePic : null,
+          submittedAt: mostRecentReview.createdAt
+        } : null
       },
       lastUpdated: new Date()
     };
