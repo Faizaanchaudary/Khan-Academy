@@ -86,11 +86,13 @@ export const register = async (req, res) => {
       provider: 'email',
       role,
       firstName: firstName.trim(),
-      lastName: lastName.trim()
+      lastName: lastName.trim(),
+      lastOnline: new Date()
     });
 
     const token = generateToken(user._id);
     user.lastLogin = new Date();
+    user.lastOnline = new Date();
     await user.save();
 
     // Note: Auto-subscription creation is disabled. Users can subscribe manually if needed.
@@ -142,6 +144,7 @@ export const login = async (req, res) => {
     const token = generateToken(user._id);
 
     user.lastLogin = new Date();
+    user.lastOnline = new Date();
     await user.save();
 
     // Fetch user subscription data
@@ -224,12 +227,14 @@ export const googleSignIn = async (req, res) => {
         provider: 'google',
         isEmailVerified: decodedToken.email_verified || false,
         profilePicture: decodedToken.picture || null,
-        role: 'student' // Default to student for Google sign-in
+        role: 'student', // Default to student for Google sign-in
+        lastOnline: new Date()
       });
 
       // Note: Auto-subscription creation is disabled. Users can subscribe manually if needed.
     } else {
       user.lastLogin = new Date();
+      user.lastOnline = new Date();
       await user.save();
     }
 
@@ -358,7 +363,8 @@ export const appleSignIn = async (req, res) => {
         lastName: lastName,
         provider: 'apple',
         isEmailVerified: decodedToken.email_verified || false,
-        role: 'student' // Default to student for Apple sign-in
+        role: 'student', // Default to student for Apple sign-in
+        lastOnline: new Date()
       });
 
       // Note: Auto-subscription creation is disabled. Users can subscribe manually if needed.
@@ -369,6 +375,7 @@ export const appleSignIn = async (req, res) => {
       }
       
       existingUser.lastLogin = new Date();
+      existingUser.lastOnline = new Date();
       await existingUser.save();
     }
 
