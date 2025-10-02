@@ -651,3 +651,54 @@ export const getUserLevelProgress = async (req, res) => {
     sendError(res, 'Internal server error while getting user level progress');
   }
 };
+
+export const getFilteredQuestions = async (req, res) => {
+  try {
+    const { branchId, level } = req.query;
+    
+    // Build filter object
+    let filter = { isActive: true };
+    
+    // Add branchId filter
+    if (branchId) {
+      // Check if branch exists
+      const branchDoc = await Branch.findById(branchId);
+      if (!branchDoc) {
+        return sendError(res, 'Branch not found', 404);
+      }
+      filter.branchId = branchId;
+    }
+    
+    // Add level filter
+    if (level) {
+      const levelNum = parseInt(level);
+      if (isNaN(levelNum) || levelNum < 1 || levelNum > 10) {
+        return sendError(res, 'Invalid level. Must be between 1 and 10', 400);
+      }
+      filter.level = levelNum;
+    }
+
+    // Get questions with filters
+    const questions = await Question.find(filter)
+      .populate('branchId', 'name category description icon')
+      .sort({ category: 1, branchId: 1, level: 1, questionNumber: 1 })
+      .lean();
+
+    // Get count for pagination info
+    const totalCount = await Question.countDocuments(filter);
+
+    const response = {
+      filters: {
+        branchId: branchId || 'all',
+        level: level || 'all'
+      },
+      totalQuestions: totalCount,
+      questions: questions
+    };
+
+    sendSuccess(res, 'Questions retrieved successfully', response);
+  } catch (error) {
+    console.error('Get filtered questions error:', error);
+    sendError(res, 'Internal server error while retrieving questions');
+  }
+};

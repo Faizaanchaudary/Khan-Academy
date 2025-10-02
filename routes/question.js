@@ -12,6 +12,7 @@ import {
   getUserAnswers,
   getUserStats,
   getUserLevelProgress,
+  getFilteredQuestions,
 } from '../controllers/questionController.js';
 import { authenticate } from '../middleware/auth.js';
 import { validateQuestionCreation, validateBulkQuestionCreation } from '../middleware/validation.js';
@@ -19,6 +20,7 @@ import { validateQuestionCreation, validateBulkQuestionCreation } from '../middl
 const router = express.Router();
 
 router.get('/', getAllQuestions);
+router.get('/filtered', getFilteredQuestions);
 router.get('/category/:category', getQuestionsByCategory);
 router.get('/branch/:branchId', getQuestionsByBranch);
 router.get('/:questionId', getQuestionById);
