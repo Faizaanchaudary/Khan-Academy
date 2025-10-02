@@ -240,11 +240,91 @@ const validateReviewSubmission = [
     .withMessage('Title must be between 2 and 100 characters'),
   
   body('comment')
+    .optional()
+    .trim()
+    .isLength({ min: 10, max: 1000 })
+    .withMessage('Comment must be between 10 and 1000 characters if provided'),
+  
+  handleValidationErrors
+];
+
+const validateQuestionCreation = [
+  body('branchId')
+    .notEmpty()
+    .withMessage('Branch ID is required')
+    .isMongoId()
+    .withMessage('Invalid branch ID format'),
+  
+  body('level')
+    .isInt({ min: 1, max: 10 })
+    .withMessage('Level must be between 1 and 10'),
+  
+  body('questionText')
     .trim()
     .notEmpty()
-    .withMessage('Comment is required')
+    .withMessage('Question text is required')
     .isLength({ min: 10, max: 1000 })
-    .withMessage('Comment must be between 10 and 1000 characters'),
+    .withMessage('Question text must be between 10 and 1000 characters'),
+  
+  body('equation')
+    .optional()
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage('Equation cannot exceed 200 characters'),
+  
+  body('options')
+    .isArray({ min: 2, max: 4 })
+    .withMessage('Options must be an array with 2-4 items'),
+  
+  body('options.*')
+    .trim()
+    .notEmpty()
+    .withMessage('Each option must not be empty')
+    .isLength({ min: 1, max: 200 })
+    .withMessage('Each option must be between 1 and 200 characters'),
+  
+  body('correctAnswerIndex')
+    .isInt({ min: 0, max: 3 })
+    .withMessage('Correct answer index must be between 0 and 3'),
+  
+  body('correctAnswerExplanation')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Explanation cannot exceed 500 characters'),
+  
+  handleValidationErrors
+];
+
+const validateBulkQuestionCreation = [
+  body('questions')
+    .isArray({ min: 1 })
+    .withMessage('Questions must be an array with at least 1 item'),
+  
+  body('questions.*.branchId')
+    .notEmpty()
+    .withMessage('Branch ID is required for each question')
+    .isMongoId()
+    .withMessage('Invalid branch ID format'),
+  
+  body('questions.*.level')
+    .isInt({ min: 1, max: 10 })
+    .withMessage('Level must be between 1 and 10 for each question'),
+  
+  body('questions.*.questionText')
+    .trim()
+    .notEmpty()
+    .withMessage('Question text is required for each question')
+    .isLength({ min: 10, max: 1000 })
+    .withMessage('Question text must be between 10 and 1000 characters'),
+  
+  body('questions.*.options')
+    .isArray({ min: 2, max: 4 })
+    .withMessage('Options must be an array with 2-4 items for each question'),
+  
+  body('questions.*.correctAnswerIndex')
+    .isInt({ min: 0, max: 3 })
+    .withMessage('Correct answer index must be between 0 and 3 for each question'),
   
   handleValidationErrors
 ];
@@ -260,5 +340,7 @@ export {
   validatePatientCreation,
   validatePatientUpdate,
   validateInvitationGeneration,
-  validateReviewSubmission
+  validateReviewSubmission,
+  validateQuestionCreation,
+  validateBulkQuestionCreation
 };

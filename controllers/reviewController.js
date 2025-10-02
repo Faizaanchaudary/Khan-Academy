@@ -18,7 +18,7 @@ export const addReview = async (req, res) => {
       studentId,
       rating,
       title: title.trim(),
-      comment: comment.trim(),
+      comment: comment ? comment.trim() : undefined,
       status: 'pending'
     });
 

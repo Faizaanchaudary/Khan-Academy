@@ -182,16 +182,17 @@ export const createQuestion = async (req, res) => {
   try {
     const { 
       branchId, 
+      level,
       questionText, 
       equation, 
       options, 
       correctAnswerIndex, 
-      correctAnswerExplanation, 
-    
+      correctAnswerExplanation
     } = req.body;
 
-    if (!branchId || !questionText || !options || correctAnswerIndex === undefined) {
-      return sendError(res, 'Branch ID, question text, options, and correct answer index are required', 400);
+    // Validation
+    if (!branchId || !questionText || !options || correctAnswerIndex === undefined || !level) {
+      return sendError(res, 'Branch ID, level, question text, options, and correct answer index are required', 400);
     }
 
     if (!Array.isArray(options) || options.length < 2) {
@@ -202,16 +203,22 @@ export const createQuestion = async (req, res) => {
       return sendError(res, 'Invalid correct answer index', 400);
     }
 
+    if (level < 1 || level > 10) {
+      return sendError(res, 'Level must be between 1 and 10', 400);
+    }
+
     const branch = await Branch.findById(branchId);
     if (!branch) {
       return sendError(res, 'Branch not found', 404);
     }
 
-    const questionNumber = await Question.countDocuments({ branchId }) + 1;
+    // Get question number for this specific level
+    const questionNumber = await Question.countDocuments({ branchId, level }) + 1;
 
     const question = new Question({
       branchId,
       category: branch.category,
+      level,
       questionNumber,
       questionText,
       equation,
@@ -225,10 +232,118 @@ export const createQuestion = async (req, res) => {
 
     await question.save();
 
+    // Populate branch details for response
+    await question.populate('branchId', 'name category');
+
     sendSuccess(res, 'Question created successfully', { question }, 201);
   } catch (error) {
     console.error('Create question error:', error);
+    if (error.code === 11000) {
+      return sendError(res, 'A question with this branch, level, and question number already exists', 400);
+    }
     sendError(res, 'Internal server error while creating question');
+  }
+};
+
+export const createBulkQuestions = async (req, res) => {
+  try {
+    const { questions } = req.body;
+
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return sendError(res, 'Questions array is required and cannot be empty', 400);
+    }
+
+    const createdQuestions = [];
+    const errors = [];
+
+    for (let i = 0; i < questions.length; i++) {
+      try {
+        const questionData = questions[i];
+        const { 
+          branchId, 
+          level,
+          questionText, 
+          equation, 
+          options, 
+          correctAnswerIndex, 
+          correctAnswerExplanation
+        } = questionData;
+
+        // Validation for each question
+        if (!branchId || !questionText || !options || correctAnswerIndex === undefined || !level) {
+          errors.push(`Question ${i + 1}: Branch ID, level, question text, options, and correct answer index are required`);
+          continue;
+        }
+
+        if (!Array.isArray(options) || options.length < 2) {
+          errors.push(`Question ${i + 1}: At least two options are required`);
+          continue;
+        }
+
+        if (correctAnswerIndex < 0 || correctAnswerIndex >= options.length) {
+          errors.push(`Question ${i + 1}: Invalid correct answer index`);
+          continue;
+        }
+
+        if (level < 1 || level > 10) {
+          errors.push(`Question ${i + 1}: Level must be between 1 and 10`);
+          continue;
+        }
+
+        const branch = await Branch.findById(branchId);
+        if (!branch) {
+          errors.push(`Question ${i + 1}: Branch not found`);
+          continue;
+        }
+
+        // Get question number for this specific level
+        const questionNumber = await Question.countDocuments({ branchId, level }) + 1;
+
+        const question = new Question({
+          branchId,
+          category: branch.category,
+          level,
+          questionNumber,
+          questionText,
+          equation,
+          options: options.map((option, index) => ({
+            optionText: option,
+            isCorrect: index === correctAnswerIndex
+          })),
+          correctAnswerIndex,
+          correctAnswerExplanation,
+        });
+
+        await question.save();
+        await question.populate('branchId', 'name category');
+        createdQuestions.push(question);
+
+      } catch (error) {
+        if (error.code === 11000) {
+          errors.push(`Question ${i + 1}: A question with this branch, level, and question number already exists`);
+        } else {
+          errors.push(`Question ${i + 1}: ${error.message}`);
+        }
+      }
+    }
+
+    const response = {
+      created: createdQuestions.length,
+      failed: errors.length,
+      total: questions.length,
+      questions: createdQuestions
+    };
+
+    if (errors.length > 0) {
+      response.errors = errors;
+    }
+
+    const statusCode = createdQuestions.length > 0 ? 201 : 400;
+    sendSuccess(res, `Bulk question creation completed. ${createdQuestions.length} created, ${errors.length} failed`, response, statusCode);
+
+  } catch (error) {
+    console.error('Bulk create questions error:', error);
+    sendError(res, 'Internal server error while creating bulk questions');
   }
 };
 

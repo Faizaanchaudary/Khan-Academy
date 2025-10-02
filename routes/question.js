@@ -5,6 +5,7 @@ import {
   getQuestionsByCategory,
   getQuestionById,
   createQuestion,
+  createBulkQuestions,
   updateQuestion,
   deleteQuestion,
   submitAnswer,
@@ -13,6 +14,7 @@ import {
   getUserLevelProgress,
 } from '../controllers/questionController.js';
 import { authenticate } from '../middleware/auth.js';
+import { validateQuestionCreation, validateBulkQuestionCreation } from '../middleware/validation.js';
 
 const router = express.Router();
 
@@ -20,7 +22,8 @@ router.get('/', getAllQuestions);
 router.get('/category/:category', getQuestionsByCategory);
 router.get('/branch/:branchId', getQuestionsByBranch);
 router.get('/:questionId', getQuestionById);
-router.post('/', createQuestion);
+router.post('/', validateQuestionCreation, createQuestion);
+router.post('/bulk', validateBulkQuestionCreation, createBulkQuestions);
 router.put('/:questionId', authenticate, updateQuestion);
 router.delete('/:questionId', authenticate, deleteQuestion);
 router.post('/:questionId/answer', authenticate, submitAnswer);
