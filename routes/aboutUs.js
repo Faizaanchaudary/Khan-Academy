@@ -10,7 +10,8 @@ import {
   addTeamMember,
   updateTeamMember,
   deleteTeamMember,
-  uploadTeamMemberImage
+  uploadTeamMemberImage,
+  updateAboutUsContent
 } from '../controllers/aboutUsController.js';
 import { authenticate } from '../middleware/auth.js';
 import { uploadProfilePicture } from '../middleware/upload.js';
@@ -23,6 +24,7 @@ router.get('/page-data', getAboutUsPageData);
 router.get('/:sectionType', getAboutUsSection);
 
 router.post('/', authenticate, bulkUpdateAboutUsSections);
+router.post('/update', authenticate, updateAboutUsContent);
 router.put('/:sectionType', authenticate, updateAboutUsSection);
 router.delete('/:sectionType', authenticate, deleteAboutUsSection);
 

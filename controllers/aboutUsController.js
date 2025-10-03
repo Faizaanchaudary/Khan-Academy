@@ -401,3 +401,89 @@ export const deleteTeamMember = async (req, res) => {
     sendError(res, 'Internal server error while deleting team member');
   }
 };
+
+export const updateAboutUsContent = async (req, res) => {
+  try {
+    const { sections } = req.body;
+
+    if (!sections || !Array.isArray(sections)) {
+      return sendError(res, 'Sections array is required', 400);
+    }
+
+    const results = {
+      updated: [],
+      errors: []
+    };
+
+    for (const sectionData of sections) {
+      try {
+        const { section, content } = sectionData;
+
+        if (!section || !content) {
+          results.errors.push({
+            section: section || 'unknown',
+            error: 'Section and content are required'
+          });
+          continue;
+        }
+
+        // Validate section type
+        const validSections = [
+          'what_students_say',
+          'what_we_do',
+          'our_core_values',
+          'our_mission',
+          'our_vision',
+          'meet_our_team'
+        ];
+
+        if (!validSections.includes(section)) {
+          results.errors.push({
+            section,
+            error: `Invalid section type. Must be one of: ${validSections.join(', ')}`
+          });
+          continue;
+        }
+
+        const existingSection = await AboutUs.findOne({ section });
+
+        if (!existingSection) {
+          results.errors.push({
+            section,
+            error: 'Section not found'
+          });
+          continue;
+        }
+
+        // Update only the content field
+        existingSection.content = content;
+        await existingSection.save();
+
+        results.updated.push({
+          section: existingSection.section,
+          content: existingSection.content,
+          title: existingSection.title
+        });
+      } catch (sectionError) {
+        console.error(`Error updating section ${sectionData.section}:`, sectionError);
+        results.errors.push({
+          section: sectionData.section || 'unknown',
+          error: sectionError.message
+        });
+      }
+    }
+
+    const totalUpdated = results.updated.length;
+    const totalErrors = results.errors.length;
+    
+    let message = `Content update completed. ${totalUpdated} sections updated successfully.`;
+    if (totalErrors > 0) {
+      message += ` ${totalErrors} errors occurred.`;
+    }
+
+    sendSuccess(res, message, results);
+  } catch (error) {
+    console.error('Update About Us content error:', error);
+    sendError(res, 'Internal server error while updating About Us content');
+  }
+};
