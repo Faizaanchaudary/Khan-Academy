@@ -487,3 +487,53 @@ export const updateAboutUsContent = async (req, res) => {
     sendError(res, 'Internal server error while updating About Us content');
   }
 };
+
+export const addTeamMemberWithImage = async (req, res) => {
+  try {
+    const { name, role, bio } = req.body;
+
+    if (!name || !role) {
+      return sendError(res, 'Name and role are required', 400);
+    }
+
+    // Find the meet_our_team section
+    const section = await AboutUs.findOne({ section: 'meet_our_team' });
+
+    if (!section) {
+      return sendError(res, 'Meet our team section not found', 404);
+    }
+
+    let imageUrl = '';
+
+    // Handle image upload if provided
+    if (req.file) {
+      try {
+        console.log('Uploading image for team member:', name);
+        const uploadResult = await uploadImageToCloudinary(req.file.buffer, name);
+        console.log('Upload result:', uploadResult);
+        imageUrl = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error('Image upload error:', uploadError);
+        return sendError(res, 'Failed to upload team member image', 500);
+      }
+    }
+
+    const newTeamMember = {
+      name: name.trim(),
+      role: role.trim(),
+      image: imageUrl,
+      bio: bio ? bio.trim() : ''
+    };
+
+    section.teamMembers.push(newTeamMember);
+    await section.save();
+
+    sendSuccess(res, 'Team member added successfully', { 
+      teamMember: newTeamMember,
+      message: imageUrl ? 'Team member and image uploaded successfully' : 'Team member added successfully (no image)'
+    });
+  } catch (error) {
+    console.error('Add team member with image error:', error);
+    sendError(res, 'Internal server error while adding team member');
+  }
+};

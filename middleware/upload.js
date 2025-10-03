@@ -21,6 +21,9 @@ const upload = multer({
 // Middleware for single profile picture upload
 export const uploadProfilePicture = upload.single('profilePicture');
 
+// Middleware for team member image upload
+export const uploadTeamMemberImageFile = upload.single('image');
+
 // Middleware for multiple files (if needed in future)
 export const uploadMultipleFiles = upload.array('media', 10);
 
