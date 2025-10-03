@@ -376,9 +376,9 @@ export const getStudentOverview = async (req, res) => {
       page = 1, 
       limit = 10, 
       search,
-      topScorer = 'All', // Filter: All, Math, English, Grammar
-      activeStudent = 'All', // Filter: All, online, offline, recently online
-      category = 'All' // Filter: All student, lowest score, highest score
+      topScorer,
+      activeStudent,
+      category
     } = req.query;
 
     const query = { role: 'student' };
@@ -391,20 +391,20 @@ export const getStudentOverview = async (req, res) => {
       ];
     }
 
-    // Apply Active Student filter
-    if (activeStudent !== 'All') {
+    // Apply Active Student filter (filters at database level - returns only matching students)
+    if (activeStudent && activeStudent.toLowerCase() !== 'all') {
       const now = new Date();
-      switch (activeStudent) {
+      switch (activeStudent.toLowerCase()) {
         case 'online':
-          // Consider online if lastOnline is within last 5 minutes
+          // Filter to only include students who were online within last 5 minutes
           query.lastOnline = { $gte: new Date(now.getTime() - 5 * 60 * 1000) };
           break;
         case 'offline':
-          // Consider offline if lastOnline is more than 5 minutes ago
+          // Filter to only include students who were offline for more than 5 minutes
           query.lastOnline = { $lt: new Date(now.getTime() - 5 * 60 * 1000) };
           break;
         case 'recently online':
-          // Consider recently online if lastOnline is within last 24 hours
+          // Filter to only include students who were online within last 24 hours
           query.lastOnline = { $gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) };
           break;
       }
@@ -499,28 +499,85 @@ export const getStudentOverview = async (req, res) => {
     });
 
     // Apply Top Scorer filter
-    if (topScorer !== 'All') {
-      studentsWithLevels = studentsWithLevels.filter(student => {
-        switch (topScorer) {
-          case 'Math':
-            return student.progress.math > 0;
-          case 'English':
-          case 'Grammar':
-            return student.progress.reading_writing > 0;
-          default:
-            return true;
-        }
-      });
+    if (topScorer && topScorer.toLowerCase() !== 'all') {
+      switch (topScorer.toLowerCase()) {
+        case 'math':
+          // Filter students who have math progress and find the highest level in math
+          const mathStudents = studentsWithLevels.filter(student => student.progress.math > 0);
+          if (mathStudents.length > 0) {
+            const maxMathLevel = Math.max(...mathStudents.map(student => {
+              // Get the highest level for math category
+              const mathLevels = userLevels.filter(level => 
+                level.userId.toString() === student._id.toString() && 
+                level.branchId.category === 'math'
+              );
+              return mathLevels.length > 0 ? Math.max(...mathLevels.map(l => l.currentLevel)) : 0;
+            }));
+            
+            studentsWithLevels = studentsWithLevels.filter(student => {
+              if (student.progress.math === 0) return false;
+              const studentMathLevels = userLevels.filter(level => 
+                level.userId.toString() === student._id.toString() && 
+                level.branchId.category === 'math'
+              );
+              const studentMaxMathLevel = studentMathLevels.length > 0 ? Math.max(...studentMathLevels.map(l => l.currentLevel)) : 0;
+              return studentMaxMathLevel === maxMathLevel;
+            });
+          } else {
+            studentsWithLevels = [];
+          }
+          break;
+        case 'english':
+        case 'grammar':
+          // Filter students who have reading_writing progress and find the highest level in reading_writing
+          const readingStudents = studentsWithLevels.filter(student => student.progress.reading_writing > 0);
+          if (readingStudents.length > 0) {
+            const maxReadingLevel = Math.max(...readingStudents.map(student => {
+              // Get the highest level for reading_writing category
+              const readingLevels = userLevels.filter(level => 
+                level.userId.toString() === student._id.toString() && 
+                level.branchId.category === 'reading_writing'
+              );
+              return readingLevels.length > 0 ? Math.max(...readingLevels.map(l => l.currentLevel)) : 0;
+            }));
+            
+            studentsWithLevels = studentsWithLevels.filter(student => {
+              if (student.progress.reading_writing === 0) return false;
+              const studentReadingLevels = userLevels.filter(level => 
+                level.userId.toString() === student._id.toString() && 
+                level.branchId.category === 'reading_writing'
+              );
+              const studentMaxReadingLevel = studentReadingLevels.length > 0 ? Math.max(...studentReadingLevels.map(l => l.currentLevel)) : 0;
+              return studentMaxReadingLevel === maxReadingLevel;
+            });
+          } else {
+            studentsWithLevels = [];
+          }
+          break;
+        default:
+          // Keep all students if no specific criteria
+          break;
+      }
     }
 
-    // Apply Category filter (score-based sorting)
-    if (category !== 'All') {
-      switch (category) {
+    // Apply Category filter (level-based filtering/sorting)
+    if (category && category.toLowerCase() !== 'all') {
+      switch (category.toLowerCase()) {
         case 'lowest score':
-          studentsWithLevels.sort((a, b) => a.progress.total - b.progress.total);
+          // Find the lowest level among all students
+          const minLevel = Math.min(...studentsWithLevels.map(student => student.highestLevel));
+          // Filter to only include students with the lowest level
+          studentsWithLevels = studentsWithLevels.filter(student => student.highestLevel === minLevel);
+          // Sort by highest level ascending (in case of ties)
+          studentsWithLevels.sort((a, b) => a.highestLevel - b.highestLevel);
           break;
         case 'highest score':
-          studentsWithLevels.sort((a, b) => b.progress.total - a.progress.total);
+          // Find the highest level among all students
+          const maxLevel = Math.max(...studentsWithLevels.map(student => student.highestLevel));
+          // Filter to only include students with the highest level
+          studentsWithLevels = studentsWithLevels.filter(student => student.highestLevel === maxLevel);
+          // Sort by highest level descending (in case of ties)
+          studentsWithLevels.sort((a, b) => b.highestLevel - a.highestLevel);
           break;
         default:
           // Keep original sorting (by createdAt)
@@ -531,6 +588,12 @@ export const getStudentOverview = async (req, res) => {
     // Apply pagination after filtering
     const totalFiltered = studentsWithLevels.length;
     const paginatedStudents = studentsWithLevels.slice(skip, skip + parseInt(limit));
+
+    // Only include filters that were actually provided
+    const appliedFilters = {};
+    if (topScorer) appliedFilters.topScorer = topScorer;
+    if (activeStudent) appliedFilters.activeStudent = activeStudent;
+    if (category) appliedFilters.category = category;
 
     res.json({
       success: true,
@@ -544,11 +607,7 @@ export const getStudentOverview = async (req, res) => {
           hasNextPage: skip + paginatedStudents.length < totalFiltered,
           hasPrevPage: parseInt(page) > 1
         },
-        filters: {
-          topScorer,
-          activeStudent,
-          category
-        }
+        filters: appliedFilters
       }
     });
   } catch (error) {
