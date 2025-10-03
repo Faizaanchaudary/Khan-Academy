@@ -37,6 +37,12 @@ export const getAboutUsSection = async (req, res) => {
 
 export const createOrUpdateAboutUsSection = async (req, res) => {
   try {
+    // Check if request body contains sections array (bulk update)
+    if (req.body.sections && Array.isArray(req.body.sections)) {
+      return await bulkUpdateAboutUsSections(req, res);
+    }
+
+    // Single section update
     const { section, title, subtitle, content, features, teamMembers, images, order } = req.body;
 
     if (!section || !title || !content) {
@@ -76,6 +82,79 @@ export const createOrUpdateAboutUsSection = async (req, res) => {
   } catch (error) {
     console.error('Create/Update About Us section error:', error);
     sendError(res, 'Internal server error while creating/updating About Us section');
+  }
+};
+
+export const bulkUpdateAboutUsSections = async (req, res) => {
+  try {
+    const { sections } = req.body;
+
+    if (!sections || !Array.isArray(sections)) {
+      return sendError(res, 'Sections array is required for bulk update', 400);
+    }
+
+    const results = {
+      created: [],
+      updated: [],
+      errors: []
+    };
+
+    for (const sectionData of sections) {
+      try {
+        const { section, title, subtitle, content, features, teamMembers, images, order } = sectionData;
+
+        if (!section || !title || !content) {
+          results.errors.push({
+            section: section || 'unknown',
+            error: 'Section, title, and content are required'
+          });
+          continue;
+        }
+
+        const existingSection = await AboutUs.findOne({ section });
+
+        if (existingSection) {
+          existingSection.title = title;
+          existingSection.subtitle = subtitle;
+          existingSection.content = content;
+          existingSection.features = features || [];
+          existingSection.teamMembers = teamMembers || [];
+          existingSection.images = images || [];
+          existingSection.order = order !== undefined ? order : existingSection.order;
+
+          await existingSection.save();
+          results.updated.push(existingSection);
+        } else {
+          const newSection = new AboutUs({
+            section,
+            title,
+            subtitle,
+            content,
+            features: features || [],
+            teamMembers: teamMembers || [],
+            images: images || [],
+            order: order || 0
+          });
+
+          await newSection.save();
+          results.created.push(newSection);
+        }
+      } catch (sectionError) {
+        console.error(`Error processing section ${sectionData.section}:`, sectionError);
+        results.errors.push({
+          section: sectionData.section || 'unknown',
+          error: sectionError.message
+        });
+      }
+    }
+
+    const totalProcessed = results.created.length + results.updated.length;
+    const message = `Bulk update completed. ${totalProcessed} sections processed successfully. ${results.errors.length} errors occurred.`;
+
+    sendSuccess(res, message, results);
+  } catch (error) {
+    console.error('Bulk update About Us sections error:', error);
+    sendError(res, 'Internal server error while bulk updating About Us sections');
   }
 };
 

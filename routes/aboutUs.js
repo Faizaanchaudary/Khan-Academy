@@ -3,6 +3,7 @@ import {
   getAllAboutUsSections,
   getAboutUsSection,
   createOrUpdateAboutUsSection,
+  bulkUpdateAboutUsSections,
   updateAboutUsSection,
   deleteAboutUsSection,
   getAboutUsPageData,
@@ -21,7 +22,7 @@ router.get('/', getAllAboutUsSections);
 router.get('/page-data', getAboutUsPageData);
 router.get('/:sectionType', getAboutUsSection);
 
-router.post('/', authenticate, createOrUpdateAboutUsSection);
+router.post('/', authenticate, bulkUpdateAboutUsSections);
 router.put('/:sectionType', authenticate, updateAboutUsSection);
 router.delete('/:sectionType', authenticate, deleteAboutUsSection);
 
