@@ -372,7 +372,14 @@ const getTimeAgo = (date) => {
 
 export const getStudentOverview = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search } = req.query;
+    const { 
+      page = 1, 
+      limit = 10, 
+      search,
+      topScorer = 'All', // Filter: All, Math, English, Grammar
+      activeStudent = 'All', // Filter: All, online, offline, recently online
+      category = 'All' // Filter: All student, lowest score, highest score
+    } = req.query;
 
     const query = { role: 'student' };
 
@@ -384,14 +391,31 @@ export const getStudentOverview = async (req, res) => {
       ];
     }
 
+    // Apply Active Student filter
+    if (activeStudent !== 'All') {
+      const now = new Date();
+      switch (activeStudent) {
+        case 'online':
+          // Consider online if lastOnline is within last 5 minutes
+          query.lastOnline = { $gte: new Date(now.getTime() - 5 * 60 * 1000) };
+          break;
+        case 'offline':
+          // Consider offline if lastOnline is more than 5 minutes ago
+          query.lastOnline = { $lt: new Date(now.getTime() - 5 * 60 * 1000) };
+          break;
+        case 'recently online':
+          // Consider recently online if lastOnline is within last 24 hours
+          query.lastOnline = { $gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) };
+          break;
+      }
+    }
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // Get all students with basic info
     const students = await User.find(query)
       .select('firstName lastName email profilePic lastOnline createdAt')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+      .sort({ createdAt: -1 });
 
     // Get user levels for all students
     const studentIds = students.map(student => student._id);
@@ -439,7 +463,7 @@ export const getStudentOverview = async (req, res) => {
     });
 
     // Format the response with student details, highest level, and progress
-    const studentsWithLevels = students.map(student => {
+    let studentsWithLevels = students.map(student => {
       const studentId = student._id.toString();
       const highestLevel = userHighestLevels[studentId] || {
         currentLevel: 0,
@@ -474,19 +498,56 @@ export const getStudentOverview = async (req, res) => {
       };
     });
 
-    const total = await User.countDocuments(query);
+    // Apply Top Scorer filter
+    if (topScorer !== 'All') {
+      studentsWithLevels = studentsWithLevels.filter(student => {
+        switch (topScorer) {
+          case 'Math':
+            return student.progress.math > 0;
+          case 'English':
+          case 'Grammar':
+            return student.progress.reading_writing > 0;
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply Category filter (score-based sorting)
+    if (category !== 'All') {
+      switch (category) {
+        case 'lowest score':
+          studentsWithLevels.sort((a, b) => a.progress.total - b.progress.total);
+          break;
+        case 'highest score':
+          studentsWithLevels.sort((a, b) => b.progress.total - a.progress.total);
+          break;
+        default:
+          // Keep original sorting (by createdAt)
+          break;
+      }
+    }
+
+    // Apply pagination after filtering
+    const totalFiltered = studentsWithLevels.length;
+    const paginatedStudents = studentsWithLevels.slice(skip, skip + parseInt(limit));
 
     res.json({
       success: true,
       message: 'Student overview retrieved successfully',
       data: {
-        students: studentsWithLevels,
+        students: paginatedStudents,
         pagination: {
           currentPage: parseInt(page),
-          totalPages: Math.ceil(total / parseInt(limit)),
-          totalStudents: total,
-          hasNextPage: skip + students.length < total,
+          totalPages: Math.ceil(totalFiltered / parseInt(limit)),
+          totalStudents: totalFiltered,
+          hasNextPage: skip + paginatedStudents.length < totalFiltered,
           hasPrevPage: parseInt(page) > 1
+        },
+        filters: {
+          topScorer,
+          activeStudent,
+          category
         }
       }
     });
