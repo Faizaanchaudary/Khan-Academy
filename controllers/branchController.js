@@ -1,4 +1,5 @@
 import Branch from '../models/Branch.js';
+import GuideBook from '../models/GuideBook.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 
 export const getAllBranches = async (req, res) => {
@@ -148,6 +149,85 @@ export const deleteBranch = async (req, res) => {
   } catch (error) {
     console.error('Delete branch error:', error);
     sendError(res, 'Internal server error while deleting branch');
+  }
+};
+
+// Guide Book Controllers
+export const createGuideBook = async (req, res) => {
+  try {
+    const { branchId, title, description } = req.body;
+
+    if (!branchId || !title || !description) {
+      return sendError(res, 'Branch ID, title, and description are required', 400);
+    }
+
+    // Validate that the branch exists
+    const branch = await Branch.findById(branchId);
+    if (!branch) {
+      return sendError(res, 'Branch not found', 404);
+    }
+
+    // Check if guide book already exists for this branch
+    const existingGuideBook = await GuideBook.findOne({ branchId });
+    if (existingGuideBook) {
+      return sendError(res, 'Guide book already exists for this branch', 400);
+    }
+
+    // Validate description structure
+    if (!description.sections || !Array.isArray(description.sections)) {
+      return sendError(res, 'Description must contain sections array', 400);
+    }
+
+    // Validate each section
+    for (const section of description.sections) {
+      if (!section.heading || !section.content || !Array.isArray(section.content)) {
+        return sendError(res, 'Each section must have heading and content array', 400);
+      }
+    }
+
+    const guideBook = new GuideBook({
+      branchId,
+      title,
+      description
+    });
+
+    await guideBook.save();
+
+    // Populate branch details
+    await guideBook.populate('branchId', 'name category');
+
+    sendSuccess(res, 'Guide book created successfully', { guideBook }, 201);
+  } catch (error) {
+    console.error('Create guide book error:', error);
+    sendError(res, 'Internal server error while creating guide book');
+  }
+};
+
+export const getGuideBookByBranchId = async (req, res) => {
+  try {
+    const { branchId } = req.params;
+
+    if (!branchId) {
+      return sendError(res, 'Branch ID is required', 400);
+    }
+
+    // Validate that the branch exists
+    const branch = await Branch.findById(branchId);
+    if (!branch) {
+      return sendError(res, 'Branch not found', 404);
+    }
+
+    const guideBook = await GuideBook.findOne({ branchId, isActive: true })
+      .populate('branchId', 'name category description icon');
+
+    if (!guideBook) {
+      return sendError(res, 'Guide book not found for this branch', 404);
+    }
+
+    sendSuccess(res, 'Guide book retrieved successfully', { guideBook });
+  } catch (error) {
+    console.error('Get guide book error:', error);
+    sendError(res, 'Internal server error while retrieving guide book');
   }
 };
 
