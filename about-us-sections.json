@@ -1,0 +1,139 @@
+{
+  "api_endpoints": {
+    "single_section": "POST http://localhost:5000/api/about-us",
+    "bulk_update": "POST http://localhost:5000/api/about-us/bulk-update",
+    "update_content": "POST http://localhost:5000/api/about-us/update",
+    "add_team_member": "POST http://localhost:5000/api/about-us/team-members/add"
+  },
+  "single_section_examples": [
+    
+  ],
+  "content_update_example": {
+    "sections": [
+      {
+        "section": "what_students_say",
+        "content": "Our students consistently achieve their learning goals and advance their careers through our comprehensive courses and expert guidance!"
+      },
+      {
+        "section": "our_mission",
+        "content": "To empower learners worldwide with accessible, high-quality education that transforms lives and builds successful careers."
+      },
+      {
+        "section": "our_vision",
+        "content": "To be the leading platform that makes world-class education accessible to everyone, everywhere, creating a more educated and prosperous world."
+      },
+      {
+        "section": "our_core_values",
+        "content": "Excellence, Innovation, Accessibility, Integrity, and Student Success are the pillars that guide everything we do."
+      }
+    ]
+  },
+  "team_member_example": {
+    "form_data": {
+      "name": "John Doe",
+      "role": "Senior Developer", 
+      "bio": "Experienced developer with 5+ years in web development and team leadership.",
+      "image": "team-member-image.jpg (file upload)"
+    },
+    "note": "This endpoint accepts multipart/form-data. The 'bio' field is optional. The image field must be named 'image' for the file upload."
+  },
+  "bulk_update_example": {
+    "sections": [
+      {
+        "section": "what_students_say",
+        "title": "What Our Students Say",
+        "subtitle": "Hear from our successful learners",
+        "content": "Our students consistently achieve their learning goals and advance their careers through our comprehensive courses and expert guidance.",
+        "features": [
+          {
+            "title": "95% Success Rate",
+            "description": "Students who complete our courses achieve their learning objectives",
+            "icon": "trophy"
+          },
+          {
+            "title": "Real Results",
+            "description": "Students report significant improvements in their skills and confidence",
+            "icon": "star"
+          }
+        ],
+        "images": [
+          {
+            "url": "https://example.com/student-success.jpg",
+            "alt": "Students celebrating success",
+            "caption": "Our students achieving their goals"
+          }
+        ],
+        "order": 1
+      },
+      {
+        "section": "what_we_do",
+        "title": "What We Do",
+        "subtitle": "Empowering learners worldwide",
+        "content": "We provide comprehensive online education solutions that help students master new skills and advance their careers through expert-led courses and personalized learning paths.",
+        "features": [
+          {
+            "title": "Expert Instructors",
+            "description": "Learn from industry professionals with years of experience",
+            "icon": "user-graduate"
+          },
+          {
+            "title": "Interactive Learning",
+            "description": "Engage with hands-on projects and real-world applications",
+            "icon": "laptop-code"
+          },
+          {
+            "title": "Flexible Schedule",
+            "description": "Learn at your own pace with 24/7 access to materials",
+            "icon": "clock"
+          }
+        ],
+        "images": [
+          {
+            "url": "https://example.com/learning-process.jpg",
+            "alt": "Students learning online",
+            "caption": "Interactive learning experience"
+          }
+        ],
+        "order": 2
+      }
+    ]
+  },
+  "postman_instructions": {
+    "single_section": {
+      "method": "POST",
+      "url": "http://localhost:5000/api/about-us",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "Copy the 'data' object from any single_section_examples above",
+      "authentication": "Add your auth token if required"
+    },
+    "bulk_update": {
+      "method": "POST",
+      "url": "http://localhost:5000/api/about-us/bulk-update",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "Copy the entire bulk_update_example object above",
+      "authentication": "Add your auth token if required"
+    },
+    "update_content": {
+      "method": "POST",
+      "url": "http://localhost:5000/api/about-us/update",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "Copy the content_update_example object above",
+      "authentication": "Add your auth token if required"
+    },
+    "add_team_member": {
+      "method": "POST",
+      "url": "http://localhost:5000/api/about-us/team-members/add",
+      "headers": {
+        "Content-Type": "multipart/form-data"
+      },
+      "body": "Form data with fields: name (required), role (required), bio (optional), image (optional file)",
+      "authentication": "Add your auth token if required"
+    }
+  }
+}

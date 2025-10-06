@@ -2,6 +2,7 @@ import UserLevel from '../models/UserLevel.js';
 import Question from '../models/Question.js';
 import Branch from '../models/Branch.js';
 import UserAnswer from '../models/UserAnswer.js';
+import QuestionPacketAnswer from '../models/QuestionPacketAnswer.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 import { checkLevelCompletionAchievement } from './achievementController.js';
 
@@ -18,21 +19,27 @@ export const getUserLevels = async (req, res) => {
       .populate('branchId', 'name category icon')
       .sort({ category: 1, 'branchId.name': 1 });
 
-    const formattedLevels = userLevels.map(ul => ({
-      _id: ul._id,
-      branch: {
-        _id: ul.branchId._id,
-        name: ul.branchId.name,
-        category: ul.branchId.category,
-        icon: ul.branchId.icon
-      },
-      currentLevel: ul.currentLevel,
-      completedLevels: ul.completedLevels,
-      totalQuestionsAnswered: ul.totalQuestionsAnswered,
-      totalCorrectAnswers: ul.totalCorrectAnswers,
-      isUnlocked: ul.isUnlocked,
-      progressPercentage: Math.round((ul.completedLevels.length / 10) * 100)
-    }));
+    const formattedLevels = userLevels.map(ul => {
+      // Calculate actual totals from completed levels
+      const totalQuestionsAnswered = ul.completedLevels.reduce((sum, level) => sum + level.questionsAnswered, 0);
+      const totalCorrectAnswers = ul.completedLevels.reduce((sum, level) => sum + level.correctAnswers, 0);
+      
+      return {
+        _id: ul._id,
+        branch: {
+          _id: ul.branchId._id,
+          name: ul.branchId.name,
+          category: ul.branchId.category,
+          icon: ul.branchId.icon
+        },
+        currentLevel: ul.currentLevel,
+        completedLevels: ul.completedLevels,
+        totalQuestionsAnswered,
+        totalCorrectAnswers,
+        isUnlocked: ul.isUnlocked,
+        progressPercentage: Math.round((ul.completedLevels.length / 10) * 100)
+      };
+    });
 
     return sendSuccess(res, 'User levels retrieved successfully', formattedLevels);
   } catch (error) {
@@ -338,5 +345,126 @@ export const initializeUserLevel = async (userId, branchId, category) => {
   } catch (error) {
     console.error('Error initializing user level:', error);
     return null;
+  }
+};
+
+export const calculateOverallLevel = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get all user levels to check branch completions
+    const userLevels = await UserLevel.find({ userId }).populate('branchId', 'name category');
+    
+    // Count completed branches (branches where all 10 levels are completed)
+    const completedBranches = userLevels.filter(userLevel => 
+      userLevel.completedLevels.length === 10
+    );
+
+    // Get completed question packets
+    const completedQuestionPackets = await QuestionPacketAnswer.find({
+      userId,
+      isCompleted: true
+    });
+
+    let overallLevel = 0;
+    let levelBreakdown = {
+      branchCompletions: completedBranches.length,
+      questionPacketCompletions: completedQuestionPackets.length,
+      levelProgression: []
+    };
+
+    // Calculate overall level based on the specified flow
+    if (completedBranches.length >= 1) {
+      overallLevel = 1;
+      levelBreakdown.levelProgression.push({
+        level: 1,
+        requirement: 'Complete 1 full branch',
+        achieved: true,
+        completedBranches: completedBranches.length
+      });
+    }
+
+    if (completedBranches.length >= 3) {
+      overallLevel = 2;
+      levelBreakdown.levelProgression.push({
+        level: 2,
+        requirement: 'Complete 3 total branches',
+        achieved: true,
+        completedBranches: completedBranches.length
+      });
+    }
+
+    if (completedBranches.length >= 6) {
+      overallLevel = 3;
+      levelBreakdown.levelProgression.push({
+        level: 3,
+        requirement: 'Complete 6 total branches',
+        achieved: true,
+        completedBranches: completedBranches.length
+      });
+    }
+
+    // After level 3, question packets start counting
+    if (overallLevel >= 3) {
+      const questionPacketLevels = Math.floor(completedQuestionPackets.length / 3);
+      if (questionPacketLevels >= 1) {
+        overallLevel = 3 + questionPacketLevels;
+        
+        // Add question packet level progressions
+        for (let i = 1; i <= questionPacketLevels; i++) {
+          const requiredPackets = 3 * i;
+          levelBreakdown.levelProgression.push({
+            level: 3 + i,
+            requirement: `Complete ${requiredPackets} question packets (after reaching level 3)`,
+            achieved: true,
+            completedPackets: completedQuestionPackets.length
+          });
+        }
+      }
+    }
+
+    // Check next level requirements
+    let nextLevelRequirement = null;
+    if (overallLevel < 3) {
+      const branchesNeeded = overallLevel === 0 ? 1 : overallLevel === 1 ? 3 : 6;
+      nextLevelRequirement = {
+        type: 'branches',
+        required: branchesNeeded,
+        current: completedBranches.length,
+        remaining: branchesNeeded - completedBranches.length
+      };
+    } else {
+      const currentPacketLevel = Math.floor(completedQuestionPackets.length / 3);
+      const nextPacketLevel = currentPacketLevel + 1;
+      const packetsNeeded = 3 * nextPacketLevel;
+      nextLevelRequirement = {
+        type: 'question_packets',
+        required: packetsNeeded,
+        current: completedQuestionPackets.length,
+        remaining: packetsNeeded - completedQuestionPackets.length
+      };
+    }
+
+    return sendSuccess(res, 'Overall level calculated successfully', {
+      userId,
+      overallLevel,
+      levelBreakdown,
+      nextLevelRequirement,
+      completedBranches: completedBranches.map(branch => ({
+        _id: branch.branchId._id,
+        name: branch.branchId.name,
+        category: branch.branchId.category,
+        completedAt: branch.completedLevels[9]?.completedAt // Last level completion date
+      })),
+      completedQuestionPackets: completedQuestionPackets.map(packet => ({
+        _id: packet._id,
+        questionPacketId: packet.questionPacketId,
+        score: packet.score,
+        completedAt: packet.submittedAt
+      }))
+    });
+  } catch (error) {
+    console.error('Error calculating overall level:', error);
+    return sendError(res, 'Failed to calculate overall level', 500);
   }
 };

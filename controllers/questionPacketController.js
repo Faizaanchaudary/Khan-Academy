@@ -1,5 +1,4 @@
 import QuestionPacket from '../models/QuestionPacket.js';
-import UserLevel from '../models/UserLevel.js';
 import QuestionPacketAnswer from '../models/QuestionPacketAnswer.js';
 import UserAnswer from '../models/UserAnswer.js';
 
@@ -294,9 +293,6 @@ export const submitQuestionPacketAnswers = async (req, res) => {
     await questionPacketAnswer.save();
 
 
-    let levelUpdated = false;
-    // TODO: Implement user level tracking logic if needed
-
     res.status(200).json({
       success: true,
       message: 'Answers submitted successfully',
@@ -305,8 +301,7 @@ export const submitQuestionPacketAnswers = async (req, res) => {
         totalQuestions: totalQuestionsInPacket,
         score,
         isCompleted,
-        results: answerResults,
-        levelUpdated
+        results: answerResults
       }
     });
   } catch (error) {
@@ -400,10 +395,6 @@ export const answerIndividualQuestion = async (req, res) => {
     const allCorrect = totalCorrect === questionPacket.questions.length;
 
 
-    let levelUpdated = false;
-    // TODO: Implement user level tracking logic for individual questions
-    // Consider mapping subjectCategory to user category if needed
-
     res.status(200).json({
       success: true,
       message: 'Answer submitted successfully',
@@ -419,8 +410,7 @@ export const answerIndividualQuestion = async (req, res) => {
           correct: totalCorrect,
           isCompleted: isPacketCompleted,
           allCorrect
-        },
-        levelUpdated
+        }
       }
     });
   } catch (error) {
