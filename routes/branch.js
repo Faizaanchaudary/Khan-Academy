@@ -10,12 +10,12 @@ import {
   createGuideBook,
   getGuideBookByBranchId
 } from '../controllers/branchController.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, optionalAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
-router.get('/', getAllBranches); 
-router.get('/category/:category', getBranchesByCategory);
+router.get('/', optionalAuth, getAllBranches); 
+router.get('/category/:category', optionalAuth, getBranchesByCategory);
 router.get('/id/:branchId', getBranchById);
 router.get('/detail/:branchId', getBranchBasicInfo);
 router.post('/', authenticate, createBranch);

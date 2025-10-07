@@ -348,6 +348,223 @@ export const initializeUserLevel = async (userId, branchId, category) => {
   }
 };
 
+export const getUserDetailedProgress = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { branchId, level } = req.query;
+
+    console.log('getUserDetailedProgress - User ID:', userId);
+    console.log('getUserDetailedProgress - Branch ID:', branchId);
+    console.log('getUserDetailedProgress - Level:', level);
+
+    if (!branchId) {
+      return sendError(res, 'Branch ID is required', 400);
+    }
+
+    // Validate level parameter if provided
+    if (level && (isNaN(level) || level < 1 || level > 10)) {
+      return sendError(res, 'Level must be a number between 1 and 10', 400);
+    }
+
+    // Get branch information
+    const branch = await Branch.findById(branchId);
+    if (!branch) {
+      return sendError(res, 'Branch not found', 404);
+    }
+
+    // Get user level data
+    const userLevel = await UserLevel.findOne({ userId, branchId });
+    const currentLevel = userLevel ? userLevel.currentLevel : 1;
+    const completedLevels = userLevel ? userLevel.completedLevels.length : 0;
+
+    // Get all questions for the branch
+    const questions = await Question.find({
+      branchId,
+      isActive: true
+    }).sort({ level: 1, questionNumber: 1 });
+
+    console.log('getUserDetailedProgress - Questions found:', questions.length);
+
+    // Get all user answers for this branch
+    const userAnswers = await UserAnswer.find({
+      userId,
+      branchId
+    }).populate({
+      path: 'questionId',
+      select: 'questionText equation options correctAnswerIndex correctAnswerExplanation level questionNumber'
+    });
+
+    console.log('getUserDetailedProgress - User answers found:', userAnswers.length);
+    if (userAnswers.length > 0) {
+      console.log('getUserDetailedProgress - First user answer structure:', {
+        questionId: userAnswers[0].questionId,
+        selectedOptionIndex: userAnswers[0].selectedOptionIndex,
+        isCorrect: userAnswers[0].isCorrect,
+        level: userAnswers[0].questionId?.level
+      });
+      
+      // Check what levels have answers
+      const levelsWithAnswers = [...new Set(userAnswers.map(a => a.questionId?.level).filter(l => l !== undefined))];
+      console.log('getUserDetailedProgress - Levels with answers:', levelsWithAnswers);
+      
+      // Debug: Check if questionId is populated correctly
+      console.log('getUserDetailedProgress - First questionId type:', typeof userAnswers[0].questionId);
+      console.log('getUserDetailedProgress - First questionId level:', userAnswers[0].questionId?.level);
+    }
+
+    // Group questions and answers by level
+    const levelDetails = [];
+    
+    // Determine which levels to process
+    const levelsToProcess = level ? [parseInt(level)] : Array.from({length: 10}, (_, i) => i + 1);
+    
+    for (const levelNum of levelsToProcess) {
+      const levelQuestions = questions.filter(q => q.level === levelNum);
+      const levelAnswers = userAnswers.filter(a => {
+        if (!a.questionId) return false;
+        // If questionId is a string (not populated), we need to get it from the question directly
+        if (typeof a.questionId === 'string') {
+          // Find the question in our questions array to get the level
+          const question = questions.find(q => q._id.toString() === a.questionId.toString());
+          return question && question.level === levelNum;
+        }
+        // If level is undefined in populated object, get it from questions array
+        if (a.questionId.level === undefined) {
+          const question = questions.find(q => q._id.toString() === a.questionId._id.toString());
+          return question && question.level === levelNum;
+        }
+        return a.questionId.level === levelNum;
+      });
+      
+      console.log(`Level ${levelNum} - Questions: ${levelQuestions.length}, Answers: ${levelAnswers.length}`);
+      if (levelAnswers.length > 0) {
+        const firstAnswer = levelAnswers[0];
+        const questionIdValue = typeof firstAnswer.questionId === 'string' 
+          ? firstAnswer.questionId 
+          : firstAnswer.questionId._id;
+        console.log(`Level ${levelNum} - First answer questionId:`, questionIdValue);
+        console.log(`Level ${levelNum} - First question _id:`, levelQuestions[0]?._id);
+      }
+      
+      const levelStats = {
+        level: levelNum,
+        totalQuestions: levelQuestions.length,
+        questionsAnswered: levelAnswers.length,
+        correctAnswers: levelAnswers.filter(a => a.isCorrect).length,
+        accuracyPercentage: levelAnswers.length > 0 ? 
+          Math.round((levelAnswers.filter(a => a.isCorrect).length / levelAnswers.length) * 100) : 0,
+        averageTimeSpent: levelAnswers.length > 0 ? 
+          Math.round(levelAnswers.reduce((sum, a) => sum + (a.timeSpent || 0), 0) / levelAnswers.length) : 0,
+        isCompleted: levelAnswers.length >= levelQuestions.length,
+        isUnlocked: levelNum <= currentLevel,
+        questions: levelQuestions.map(question => {
+          const userAnswer = levelAnswers.find(a => {
+            if (!a.questionId) return false;
+            const answerQuestionId = typeof a.questionId === 'string' 
+              ? a.questionId.toString() 
+              : a.questionId._id?.toString();
+            const currentQuestionId = question._id.toString();
+            return answerQuestionId === currentQuestionId;
+          });
+          
+          // Debug logging for first question
+          if (question.questionNumber === 1) {
+            console.log(`Level ${levelNum} - Question 1 ID:`, question._id.toString());
+            const availableAnswerIds = levelAnswers.map(a => {
+              if (!a.questionId) return 'null';
+              return typeof a.questionId === 'string' 
+                ? a.questionId.toString() 
+                : a.questionId._id?.toString();
+            });
+            console.log(`Level ${levelNum} - Available answer IDs:`, availableAnswerIds);
+            console.log(`Level ${levelNum} - Found user answer:`, userAnswer ? 'YES' : 'NO');
+            if (userAnswer) {
+              console.log(`Level ${levelNum} - User answer details:`, {
+                selectedOptionIndex: userAnswer.selectedOptionIndex,
+                isCorrect: userAnswer.isCorrect
+              });
+            }
+          }
+          
+          return {
+            _id: question._id,
+            questionNumber: question.questionNumber,
+            questionText: question.questionText,
+            equation: question.equation,
+            options: question.options,
+            correctAnswerIndex: question.correctAnswerIndex,
+            correctAnswerExplanation: question.correctAnswerExplanation,
+            userAnswer: userAnswer ? {
+              selectedOptionIndex: userAnswer.selectedOptionIndex,
+              selectedOption: question.options[userAnswer.selectedOptionIndex],
+              isCorrect: userAnswer.isCorrect,
+              pointsEarned: userAnswer.pointsEarned,
+              timeSpent: userAnswer.timeSpent,
+              answeredAt: userAnswer.answeredAt
+            } : null
+          };
+        })
+      };
+      
+      levelDetails.push(levelStats);
+    }
+
+    // Calculate overall statistics
+    // If specific level is requested, only calculate stats for that level
+    const relevantAnswers = level ? 
+      userAnswers.filter(a => {
+        if (!a.questionId) return false;
+        // If questionId is a string (not populated), get level from questions array
+        if (typeof a.questionId === 'string') {
+          const question = questions.find(q => q._id.toString() === a.questionId.toString());
+          return question && question.level === parseInt(level);
+        }
+        // If level is undefined in populated object, get it from questions array
+        if (a.questionId.level === undefined) {
+          const question = questions.find(q => q._id.toString() === a.questionId._id.toString());
+          return question && question.level === parseInt(level);
+        }
+        return a.questionId.level === parseInt(level);
+      }) : 
+      userAnswers;
+    
+    const totalQuestionsAnswered = relevantAnswers.length;
+    const totalCorrectAnswers = relevantAnswers.filter(a => a.isCorrect).length;
+    const accuracyPercentage = totalQuestionsAnswered > 0 ? 
+      Math.round((totalCorrectAnswers / totalQuestionsAnswered) * 100) : 0;
+    const averageTimeSpent = totalQuestionsAnswered > 0 ? 
+      Math.round(relevantAnswers.reduce((sum, a) => sum + (a.timeSpent || 0), 0) / totalQuestionsAnswered) : 0;
+
+    return sendSuccess(res, 'User detailed progress retrieved successfully', {
+      branch: {
+        _id: branch._id,
+        name: branch.name,
+        category: branch.category,
+        icon: branch.icon,
+        description: branch.description
+      },
+      userProgress: {
+        currentLevel: currentLevel,
+        completedLevels: completedLevels,
+        totalLevels: 10,
+        progressPercentage: Math.round((completedLevels / 10) * 100),
+        isUnlocked: userLevel ? userLevel.isUnlocked : true
+      },
+      levelDetails,
+      overallStats: {
+        totalQuestionsAnswered,
+        totalCorrectAnswers,
+        accuracyPercentage,
+        averageTimeSpent,
+        totalPointsEarned: relevantAnswers.reduce((sum, a) => sum + (a.pointsEarned || 0), 0)
+      }
+    });
+  } catch (error) {
+    console.error('Error getting user detailed progress:', error);
+    return sendError(res, 'Failed to retrieve user detailed progress', 500);
+  }
+};
+
 export const calculateOverallLevel = async (req, res) => {
   try {
     const userId = req.user.id;

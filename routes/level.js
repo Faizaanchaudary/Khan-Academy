@@ -4,7 +4,8 @@ import {
   getLevelQuestions,
   submitLevelAnswer,
   getBranchProgress,
-  calculateOverallLevel
+  calculateOverallLevel,
+  getUserDetailedProgress
 } from '../controllers/levelController.js';
 import { authenticate } from '../middleware/auth.js';
 
@@ -19,6 +20,7 @@ router.get('/branch/:branchId/progress', getBranchProgress);
 router.get('/branch/:branchId/level/:level', getLevelQuestions);
 router.post('/question/:questionId/answer', submitLevelAnswer);
 router.get('/overall', calculateOverallLevel);
+router.get('/detailed-progress', getUserDetailedProgress);
 
 
 

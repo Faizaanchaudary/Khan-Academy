@@ -1,5 +1,6 @@
 import Branch from '../models/Branch.js';
 import GuideBook from '../models/GuideBook.js';
+import UserLevel from '../models/UserLevel.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 
 export const getAllBranches = async (req, res) => {
@@ -8,12 +9,60 @@ export const getAllBranches = async (req, res) => {
       .sort({ category: 1, createdAt: 1 })
       .lean();
 
+    // Check if user is authenticated
+    const userId = req.user?.id;
+    let userLevels = [];
+
+    console.log('Branches API - User ID:', userId);
+    console.log('Branches API - User object:', req.user ? 'Present' : 'Not present');
+
+    if (userId) {
+      // Fetch user levels for all branches
+      userLevels = await UserLevel.find({ userId })
+        .populate('branchId', 'name category icon')
+        .lean();
+      
+      console.log('Branches API - User levels found:', userLevels.length);
+    }
+
+    // Helper function to add user level info to branches
+    const addUserLevelInfo = (branchList) => {
+      return branchList.map(branch => {
+        const userLevel = userLevels.find(ul => ul.branchId._id.toString() === branch._id.toString());
+        
+        if (userLevel) {
+          return {
+            ...branch,
+            userProgress: {
+              currentLevel: userLevel.currentLevel,
+              totalLevels: 10,
+              completedLevels: userLevel.completedLevels.length,
+              completedLevelsArray: userLevel.completedLevels.map(cl => cl.level),
+              isUnlocked: userLevel.isUnlocked,
+              progressPercentage: Math.round((userLevel.completedLevels.length / 10) * 100)
+            }
+          };
+        } else {
+          return {
+            ...branch,
+            userProgress: {
+              currentLevel: 1,
+              totalLevels: 10,
+              completedLevels: 0,
+              isUnlocked: true,
+              progressPercentage: 0
+            }
+          };
+        }
+      });
+    };
+
     const mathBranches = branches.filter(branch => branch.category === 'math');
     const readingWritingBranches = branches.filter(branch => branch.category === 'reading_writing');
 
     const response = {
-      mathBranches,
-      readingWritingBranches
+      mathBranches: addUserLevelInfo(mathBranches),
+      readingWritingBranches: addUserLevelInfo(readingWritingBranches)
     };
 
     sendSuccess(res, 'Branches retrieved successfully', response);
@@ -104,10 +153,60 @@ export const getBranchesByCategory = async (req, res) => {
       .sort({ createdAt: 1 })
       .lean();
 
+    // Check if user is authenticated
+    const userId = req.user?.id;
+    let userLevels = [];
+
+    console.log('Branches by Category API - User ID:', userId);
+    console.log('Branches by Category API - User object:', req.user ? 'Present' : 'Not present');
+
+    if (userId) {
+      // Fetch user levels for branches in this category
+      userLevels = await UserLevel.find({ userId, category })
+        .populate('branchId', 'name category icon')
+        .lean();
+      
+      console.log('Branches by Category API - User levels found:', userLevels.length);
+    }
+
+    // Helper function to add user level info to branches
+    const addUserLevelInfo = (branchList) => {
+      return branchList.map(branch => {
+        const userLevel = userLevels.find(ul => ul.branchId._id.toString() === branch._id.toString());
+        
+        if (userLevel) {
+          return {
+            ...branch,
+            userProgress: {
+              currentLevel: userLevel.currentLevel,
+              totalLevels: 10,
+              completedLevels: userLevel.completedLevels.length,
+              completedLevelsArray: userLevel.completedLevels.map(cl => cl.level),
+              isUnlocked: userLevel.isUnlocked,
+              progressPercentage: Math.round((userLevel.completedLevels.length / 10) * 100)
+            }
+          };
+        } else {
+          return {
+            ...branch,
+            userProgress: {
+              currentLevel: 1,
+              totalLevels: 10,
+              completedLevels: 0,
+              isUnlocked: true,
+              progressPercentage: 0
+            }
+          };
+        }
+      });
+    };
+
+    const branchesWithUserProgress = addUserLevelInfo(branches);
+
     sendSuccess(res, `Branches for ${category} category retrieved successfully`, { 
       category, 
-      branches,
-      count: branches.length 
+      branches: branchesWithUserProgress,
+      count: branchesWithUserProgress.length 
     });
   } catch (error) {
     console.error('Get branches by category error:', error);

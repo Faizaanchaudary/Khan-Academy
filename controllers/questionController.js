@@ -17,9 +17,10 @@ const updateUserLevelProgress = async (userId, branchId, category, questionLevel
       return false;
     }
 
-    if (questionLevel !== userLevel.currentLevel) {
-      return false;
-    }
+    // Allow out-of-order level completion - remove this restriction
+    // if (questionLevel !== userLevel.currentLevel) {
+    //   return false;
+    // }
 
     const questionsInLevel = await Question.find({
       branchId,
@@ -46,21 +47,34 @@ const updateUserLevelProgress = async (userId, branchId, category, questionLevel
     const isLevelCompleted = questionsAnsweredInLevel >= questionsPerLevel && correctAnswersInLevel >= questionsPerLevel;
 
     if (isLevelCompleted) {
-      const completedLevel = {
-        level: questionLevel,
-        completedAt: new Date(),
-        questionsAnswered: questionsAnsweredInLevel,
-        correctAnswers: correctAnswersInLevel,
-        totalQuestions: questionsPerLevel
-      };
-
-      userLevel.completedLevels.push(completedLevel);
+      // Check if this level is already completed
+      const existingCompletedLevel = userLevel.completedLevels.find(cl => cl.level === questionLevel);
       
-      if (userLevel.currentLevel < 10) {
-        userLevel.currentLevel = userLevel.currentLevel + 1;
-      }
+      if (!existingCompletedLevel) {
+        const completedLevel = {
+          level: questionLevel,
+          completedAt: new Date(),
+          questionsAnswered: questionsAnsweredInLevel,
+          correctAnswers: correctAnswersInLevel,
+          totalQuestions: questionsPerLevel
+        };
 
-      console.log(`🎉 User completed level ${questionLevel}! Advanced to level ${userLevel.currentLevel}`);
+        userLevel.completedLevels.push(completedLevel);
+        
+        // Update currentLevel to the next uncompleted level
+        const completedLevelNumbers = userLevel.completedLevels.map(cl => cl.level).sort((a, b) => a - b);
+        let nextLevel = 1;
+        for (const completedLevelNum of completedLevelNumbers) {
+          if (completedLevelNum === nextLevel) {
+            nextLevel++;
+          } else {
+            break;
+          }
+        }
+        userLevel.currentLevel = Math.min(nextLevel, 10);
+
+        console.log(`🎉 User completed level ${questionLevel}! Current level updated to ${userLevel.currentLevel}`);
+      }
     }
 
     await userLevel.save();

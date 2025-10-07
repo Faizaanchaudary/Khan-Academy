@@ -18,7 +18,8 @@
     "test:achievements": "node scripts/testAchievementProgress.js",
     "debug:achievements": "node scripts/debugAchievementProgress.js",
     "test:level-progression": "node scripts/testLevelProgression.js",
-    "test:payments": "node scripts/testPaymentSystem.js"
+    "test:payments": "node scripts/testPaymentSystem.js",
+    "auto-complete": "node scripts/runAutoComplete.js"
   },
   "keywords": [
     "chiropractor",
