@@ -1,6 +1,7 @@
 import QuestionPacket from '../models/QuestionPacket.js';
 import QuestionPacketAnswer from '../models/QuestionPacketAnswer.js';
 import UserAnswer from '../models/UserAnswer.js';
+import Branch from '../models/Branch.js';
 
 // Utility function to calculate progress for a question packet
 const calculateProgress = (questions) => {
@@ -88,7 +89,17 @@ export const getQuestionPackets = async (req, res) => {
     
     let filter = {};
     
-    if (subject) filter.subjectCategory = subject;
+    // Map frontend filter names to database field names
+    if (subject) {
+      // Convert frontend subject names to database values
+      if (subject === 'Math') {
+        filter.subjectCategory = 'Maths';
+      } else if (subject === 'Reading & Writing') {
+        filter.subjectCategory = 'Reading & Writing';
+      } else {
+        filter.subjectCategory = subject;
+      }
+    }
     if (difficulty) filter.difficultyLevel = difficulty;
     if (status) filter.status = status;
     if (category) filter.category = category;
@@ -100,9 +111,13 @@ export const getQuestionPackets = async (req, res) => {
       if (maxQuestions) filter.numberOfQuestions.$lte = parseInt(maxQuestions);
     }
 
+    console.log('Filter applied:', filter);
+    
     const questionPackets = await QuestionPacket.find(filter)
       .sort({ createdAt: -1 })
       .lean(); // Use lean() for better performance
+
+    console.log('Found question packets:', questionPackets.length);
 
     // Add progress information to each packet
     const packetsWithProgress = questionPackets.map(packet => ({
@@ -110,8 +125,11 @@ export const getQuestionPackets = async (req, res) => {
       progress: calculateProgress(packet.questions)
     }));
 
+    console.log('Packets with progress:', packetsWithProgress.length);
+
     res.status(200).json({
       success: true,
+      message: 'Question packets retrieved successfully',
       data: packetsWithProgress
     });
   } catch (error) {
@@ -320,8 +338,7 @@ export const answerIndividualQuestion = async (req, res) => {
     const { questionPacketId, questionIndex, userAnswer } = req.body;
     const userId = req.user.id;
 
-
-    const questionPacket = await QuestionPacket.findById(questionPacketId)
+    const questionPacket = await QuestionPacket.findById(questionPacketId);
     
     if (!questionPacket) {
       return res.status(404).json({
@@ -329,7 +346,6 @@ export const answerIndividualQuestion = async (req, res) => {
         message: 'Question packet not found'
       });
     }
-
 
     if (questionIndex < 0 || questionIndex >= questionPacket.questions.length) {
       return res.status(400).json({
@@ -341,59 +357,72 @@ export const answerIndividualQuestion = async (req, res) => {
     const question = questionPacket.questions[questionIndex];
     const isCorrect = userAnswer === question.correctAnswer;
 
+    // Map subjectCategory to the correct enum values
+    const categoryMap = {
+      'Maths': 'math',
+      'Reading & Writing': 'reading_writing'
+    };
 
-    const optionIndex = question.options.findIndex(option => option === userAnswer);
-    
-    if (optionIndex === -1) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid answer option'
+    // Get or create a "Question Packets" branch for tracking
+    let questionPacketsBranch = await Branch.findOne({ name: 'Question Packets' });
+    if (!questionPacketsBranch) {
+      questionPacketsBranch = new Branch({
+        name: 'Question Packets',
+        description: 'Practice question packets for skill building',
+        category: 'math', // Default category
+        icon: 'book-icon.svg'
       });
+      await questionPacketsBranch.save();
     }
 
-
-    const existingAnswer = await UserAnswer.findOne({
+    // Find existing packet answer record
+    let packetAnswer = await QuestionPacketAnswer.findOne({
       userId,
-      questionId: `${questionPacketId}_${questionIndex}` // Create unique ID for packet question
+      questionPacketId
     });
 
-    let userAnswerRecord;
-    if (existingAnswer) {
-
-      existingAnswer.selectedOptionIndex = optionIndex;
-      existingAnswer.isCorrect = isCorrect;
-      existingAnswer.answeredAt = new Date();
-      await existingAnswer.save();
-      userAnswerRecord = existingAnswer;
-    } else {
-
-      userAnswerRecord = new UserAnswer({
+    if (!packetAnswer) {
+      // Create new packet answer record
+      packetAnswer = new QuestionPacketAnswer({
         userId,
-        questionId: `${questionPacketId}_${questionIndex}`,
-        branchId: null, // No longer using branch reference
-        category: questionPacket.subjectCategory,
-        selectedOptionIndex: optionIndex,
-        isCorrect,
-        pointsEarned: isCorrect ? 1 : 0
+        questionPacketId,
+        branchId: questionPacketsBranch._id,
+        category: categoryMap[questionPacket.subjectCategory] || 'math',
+        answers: [],
+        correctAnswers: 0,
+        totalQuestions: questionPacket.questions.length,
+        score: 0,
+        isCompleted: false
       });
-      await userAnswerRecord.save();
     }
 
+    // Update or add the specific question answer
+    const existingAnswerIndex = packetAnswer.answers.findIndex(
+      answer => answer.questionIndex === questionIndex
+    );
 
-    const totalAnswered = await UserAnswer.countDocuments({
-      userId,
-      questionId: { $regex: `^${questionPacketId}_` }
-    });
+    const answerData = {
+      questionIndex,
+      userAnswer,
+      correctAnswer: question.correctAnswer,
+      isCorrect,
+      explanation: question.reasonForCorrectAnswer
+    };
 
-    const totalCorrect = await UserAnswer.countDocuments({
-      userId,
-      questionId: { $regex: `^${questionPacketId}_` },
-      isCorrect: true
-    });
+    if (existingAnswerIndex >= 0) {
+      // Update existing answer
+      packetAnswer.answers[existingAnswerIndex] = answerData;
+    } else {
+      // Add new answer
+      packetAnswer.answers.push(answerData);
+    }
 
-    const isPacketCompleted = totalAnswered === questionPacket.questions.length;
-    const allCorrect = totalCorrect === questionPacket.questions.length;
+    // Recalculate stats
+    packetAnswer.correctAnswers = packetAnswer.answers.filter(a => a.isCorrect).length;
+    packetAnswer.score = Math.round((packetAnswer.correctAnswers / packetAnswer.totalQuestions) * 100);
+    packetAnswer.isCompleted = packetAnswer.answers.length === packetAnswer.totalQuestions;
 
+    await packetAnswer.save();
 
     res.status(200).json({
       success: true,
@@ -405,11 +434,11 @@ export const answerIndividualQuestion = async (req, res) => {
         isCorrect,
         explanation: question.reasonForCorrectAnswer,
         progress: {
-          answered: totalAnswered,
-          total: questionPacket.questions.length,
-          correct: totalCorrect,
-          isCompleted: isPacketCompleted,
-          allCorrect
+          answered: packetAnswer.answers.length,
+          total: packetAnswer.totalQuestions,
+          correct: packetAnswer.correctAnswers,
+          isCompleted: packetAnswer.isCompleted,
+          score: packetAnswer.score
         }
       }
     });

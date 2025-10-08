@@ -17,8 +17,8 @@ const router = express.Router();
 
 router.post('/create', authenticate, createQuestionPacket);
 router.post('/save-draft', authenticate, saveAsDraft);
-router.get('/', getQuestionPackets);
-router.get('/:id', getQuestionPacketById);
+router.get('/', authenticate, getQuestionPackets);
+router.get('/:id', authenticate, getQuestionPacketById);
 router.put('/:id', authenticate, updateQuestionPacket);
 router.delete('/:id', authenticate, deleteQuestionPacket);
 router.post('/:id/submit-answers', authenticate, submitQuestionPacketAnswers);

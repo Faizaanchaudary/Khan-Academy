@@ -17,12 +17,26 @@ export const getUserAchievements = async (req, res) => {
     const userAchievements = await UserAchievement.find({ userId })
       .populate('achievementId');
 
+    // Get actual user levels to calculate correct progress
+    const userLevels = await UserLevel.find({ userId })
+      .populate('branchId', 'name category icon');
+
     const userAchievementMap = new Map();
     userAchievements.forEach(ua => {
       userAchievementMap.set(ua.achievementId._id.toString(), ua);
     });
+
+    const userLevelMap = new Map();
+    userLevels.forEach(ul => {
+      userLevelMap.set(ul.branchId._id.toString(), ul);
+    });
+
     const achievementsWithProgress = achievements.map(achievement => {
       const userAchievement = userAchievementMap.get(achievement._id.toString());
+      const userLevel = userLevelMap.get(achievement.branchId._id.toString());
+      
+      // Calculate actual completed levels from UserLevel model
+      const actualCompletedLevels = userLevel ? userLevel.completedLevels.length : 0;
       
       if (userAchievement) {
         return {
@@ -41,11 +55,11 @@ export const getUserAchievements = async (req, res) => {
             icon: '❓'
           },
           progress: {
-            current: userAchievement.progress.levelsCompleted,
+            current: actualCompletedLevels, // Use actual completed levels
             total: userAchievement.progress.totalRequired,
-            percentage: Math.round((userAchievement.progress.levelsCompleted / userAchievement.progress.totalRequired) * 100)
+            percentage: Math.round((actualCompletedLevels / userAchievement.progress.totalRequired) * 100)
           },
-          isCompleted: userAchievement.isCompleted,
+          isCompleted: actualCompletedLevels >= userAchievement.progress.totalRequired,
           completedAt: userAchievement.completedAt,
           pointsEarned: userAchievement.pointsEarned
         };
@@ -66,11 +80,11 @@ export const getUserAchievements = async (req, res) => {
             icon: '❓'
           },
           progress: {
-            current: 0,
+            current: actualCompletedLevels, // Use actual completed levels
             total: achievement.requirements.levelsCompleted,
-            percentage: 0
+            percentage: Math.round((actualCompletedLevels / achievement.requirements.levelsCompleted) * 100)
           },
-          isCompleted: false,
+          isCompleted: actualCompletedLevels >= achievement.requirements.levelsCompleted,
           completedAt: null,
           pointsEarned: 0
         };
@@ -686,5 +700,73 @@ export const checkDailyAchievementProgress = async (userId, questionId, branchId
   } catch (error) {
     console.error('Error checking daily achievement progress:', error);
     return false;
+  }
+};
+
+export const getBranchBadgeProgress = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { branchId } = req.params;
+
+    if (!branchId) {
+      return sendError(res, 'Branch ID is required', 400);
+    }
+
+    // Get the branch information
+    const branch = await Branch.findById(branchId);
+    if (!branch) {
+      return sendError(res, 'Branch not found', 404);
+    }
+
+    // Get user's level progress for this branch
+    const userLevel = await UserLevel.findOne({ userId, branchId });
+    
+    // Get achievement for this branch (assuming there's a badge achievement)
+    const achievement = await Achievement.findOne({ 
+      branchId: branchId,
+      isActive: true,
+      category: 'badge'
+    });
+
+    // Get user's achievement progress
+    let userAchievement = null;
+    if (achievement) {
+      userAchievement = await UserAchievement.findOne({ 
+        userId, 
+        achievementId: achievement._id 
+      });
+    }
+
+    const completedLevels = userLevel?.completedLevels?.length || 0;
+    const totalLevels = 10; // Assuming 10 levels per branch
+    const progressPercentage = Math.round((completedLevels / totalLevels) * 100);
+    const isBadgeEarned = completedLevels >= totalLevels;
+
+    const response = {
+      branch: {
+        _id: branch._id,
+        name: branch.name,
+        category: branch.category,
+        icon: branch.icon
+      },
+      badge: {
+        name: achievement?.name || `${branch.name} Pro Badge`,
+        description: achievement?.description || `Complete all levels in ${branch.name} to earn this badge`,
+        icon: achievement?.icon || '🏅',
+        isEarned: isBadgeEarned,
+        earnedAt: userAchievement?.completedAt || null
+      },
+      progress: {
+        completedLevels,
+        totalLevels,
+        percentage: progressPercentage,
+        isCompleted: isBadgeEarned
+      }
+    };
+
+    sendSuccess(res, 'Branch badge progress retrieved successfully', response);
+  } catch (error) {
+    console.error('Get branch badge progress error:', error);
+    sendError(res, 'Internal server error while retrieving badge progress');
   }
 };

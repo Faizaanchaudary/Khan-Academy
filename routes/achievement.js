@@ -8,7 +8,8 @@ import {
   updateAchievement,
   deleteAchievement,
   getAllAchievements,
-  getAchievementById
+  getAchievementById,
+  getBranchBadgeProgress
 } from '../controllers/achievementController.js';
 import { authenticate } from '../middleware/auth.js';
 import {
@@ -26,6 +27,7 @@ router.use(authenticate);
 
 
 router.get('/', getUserAchievements);
+router.get('/branch/:branchId/badge', getBranchBadgeProgress);
 router.get('/category/:category', validateCategory, getAchievementsByCategory);
 router.get('/completed', getCompletedAchievements);
 router.get('/stats', getAchievementStats);

@@ -1,5 +1,6 @@
 import User from '../models/User.js';
 import UserLevel from '../models/UserLevel.js';
+import UserAnswer from '../models/UserAnswer.js';
 import Branch from '../models/Branch.js';
 import bcrypt from 'bcryptjs';
 
@@ -615,6 +616,55 @@ export const getStudentOverview = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error while retrieving student overview'
+    });
+  }
+};
+
+export const getDailyQuestionsCount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    // Calculate 24 hours ago
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+
+    // Count questions answered in the last 24 hours
+    const dailyQuestionsCount = await UserAnswer.countDocuments({
+      userId: userId,
+      answeredAt: { $gte: twentyFourHoursAgo }
+    });
+
+    // Get additional stats for context
+    const totalQuestionsAnswered = await UserAnswer.countDocuments({
+      userId: userId
+    });
+
+    // Get today's date for reference
+    const today = new Date().toISOString().split('T')[0];
+
+    res.json({
+      success: true,
+      message: 'Daily questions count retrieved successfully',
+      data: {
+        dailyQuestionsCount,
+        totalQuestionsAnswered,
+        date: today,
+        goal: 10, // Daily goal is 10 questions
+        progressPercentage: Math.min(Math.round((dailyQuestionsCount / 10) * 100), 100) // Cap at 100%
+      }
+    });
+  } catch (error) {
+    console.error('Get daily questions count error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error while retrieving daily questions count'
     });
   }
 };

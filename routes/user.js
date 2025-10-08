@@ -6,7 +6,8 @@ import {
   updatePassword,
   getUserProfile,
   getStudents,
-  getStudentOverview
+  getStudentOverview,
+  getDailyQuestionsCount
 } from '../controllers/userController.js';
 import { authenticate } from '../middleware/auth.js';
 
@@ -15,6 +16,7 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get('/profile', getUserProfile);
+router.get('/daily-questions', getDailyQuestionsCount);
 router.get('/students', getStudents);
 router.get('/student/overview', getStudentOverview);
 router.get('/', getUsers);
