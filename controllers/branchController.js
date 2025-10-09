@@ -57,7 +57,8 @@ export const getAllBranches = async (req, res) => {
       });
     };
 
-    const mathBranches = branches.filter(branch => branch.category === 'math');
+    // Filter out the "Question Packets" branch as it's not a real subject branch
+    const mathBranches = branches.filter(branch => branch.category === 'math' && branch.name !== 'Question Packets');
     const readingWritingBranches = branches.filter(branch => branch.category === 'reading_writing');
 
     const response = {
@@ -151,7 +152,8 @@ export const getBranchesByCategory = async (req, res) => {
 
     const branches = await Branch.find({ category })
       .sort({ createdAt: 1 })
-      .lean();
+      .lean()
+      .then(branches => branches.filter(branch => branch.name !== 'Question Packets'));
 
     // Check if user is authenticated
     const userId = req.user?.id;
