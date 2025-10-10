@@ -20,7 +20,7 @@ import { validateQuestionCreation, validateBulkQuestionCreation } from '../middl
 const router = express.Router();
 
 router.get('/', getAllQuestions);
-router.get('/filtered', getFilteredQuestions);
+router.get('/filtered', authenticate, getFilteredQuestions);
 router.get('/category/:category', getQuestionsByCategory);
 router.get('/branch/:branchId', getQuestionsByBranch);
 router.get('/:questionId', getQuestionById);

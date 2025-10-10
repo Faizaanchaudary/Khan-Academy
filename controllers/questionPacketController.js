@@ -4,17 +4,17 @@ import UserAnswer from '../models/UserAnswer.js';
 import Branch from '../models/Branch.js';
 
 // Utility function to calculate progress for a question packet
-const calculateProgress = (questions) => {
-  const current = questions ? questions.length : 0;
-  const max = 10;
+const calculateProgress = (questions, userAnswers = []) => {
+  const totalQuestions = questions ? questions.length : 0;
+  const answeredQuestions = userAnswers ? userAnswers.length : 0;
   
   return {
-    current,
-    max,
-    percentage: current > 0 ? Math.round((current / max) * 100) : 0,
-    isComplete: current >= max,
-    status: current === 0 ? 'empty' : 
-            current < max ? 'incomplete' : 'complete'
+    current: answeredQuestions,
+    max: totalQuestions,
+    percentage: totalQuestions > 0 ? Math.round((answeredQuestions / totalQuestions) * 100) : 0,
+    isComplete: answeredQuestions >= totalQuestions && totalQuestions > 0,
+    status: answeredQuestions === 0 ? 'empty' : 
+            answeredQuestions < totalQuestions ? 'incomplete' : 'complete'
   };
 };
 
@@ -86,6 +86,7 @@ export const createQuestionPacket = async (req, res) => {
 export const getQuestionPackets = async (req, res) => {
   try {
     const { subject, difficulty, status, category, minQuestions, maxQuestions } = req.query;
+    const userId = req.user.id;
     
     let filter = {};
     
@@ -119,10 +120,23 @@ export const getQuestionPackets = async (req, res) => {
 
     console.log('Found question packets:', questionPackets.length);
 
-    // Add progress information to each packet
+    // Get user's answers for all question packets
+    const packetIds = questionPackets.map(packet => packet._id);
+    const userAnswers = await QuestionPacketAnswer.find({
+      userId,
+      questionPacketId: { $in: packetIds }
+    }).lean();
+
+    // Create a map of packetId -> answers for quick lookup
+    const answersMap = {};
+    userAnswers.forEach(answer => {
+      answersMap[answer.questionPacketId.toString()] = answer.answers || [];
+    });
+
+    // Add progress information to each packet based on user's actual progress
     const packetsWithProgress = questionPackets.map(packet => ({
       ...packet,
-      progress: calculateProgress(packet.questions)
+      progress: calculateProgress(packet.questions, answersMap[packet._id.toString()] || [])
     }));
 
     console.log('Packets with progress:', packetsWithProgress.length);
@@ -146,6 +160,7 @@ export const getQuestionPackets = async (req, res) => {
 export const getQuestionPacketById = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user.id;
     
     const questionPacket = await QuestionPacket.findById(id).lean();
 
@@ -156,10 +171,18 @@ export const getQuestionPacketById = async (req, res) => {
       });
     }
 
-    // Add progress information
+    // Get user's answers for this specific question packet
+    const userAnswer = await QuestionPacketAnswer.findOne({
+      userId,
+      questionPacketId: id
+    }).lean();
+
+    const userAnswers = userAnswer ? userAnswer.answers || [] : [];
+
+    // Add progress information based on user's actual progress
     const packetWithProgress = {
       ...questionPacket,
-      progress: calculateProgress(questionPacket.questions)
+      progress: calculateProgress(questionPacket.questions, userAnswers)
     };
 
     res.status(200).json({
@@ -455,7 +478,7 @@ export const answerIndividualQuestion = async (req, res) => {
 
 export const getQuestionPacketProgress = async (req, res) => {
   try {
-    const { questionPacketId } = req.params;
+    const { id: questionPacketId } = req.params;
     const userId = req.user.id;
 
 
@@ -469,26 +492,28 @@ export const getQuestionPacketProgress = async (req, res) => {
     }
 
 
-    const userAnswers = await UserAnswer.find({
+    // Get user's answers from QuestionPacketAnswer model
+    const packetAnswer = await QuestionPacketAnswer.findOne({
       userId,
-      questionId: { $regex: `^${questionPacketId}_` }
+      questionPacketId
     });
-
 
     const progressMap = {};
     let totalCorrect = 0;
+    let totalAnswered = 0;
 
-    userAnswers.forEach(answer => {
-      const questionIndex = parseInt(answer.questionId.split('_').pop());
-      progressMap[questionIndex] = {
-        userAnswer: questionPacket.questions[questionIndex].options[answer.selectedOptionIndex],
-        isCorrect: answer.isCorrect,
-        answeredAt: answer.answeredAt
-      };
-      if (answer.isCorrect) totalCorrect++;
-    });
-
-    const totalAnswered = userAnswers.length;
+    if (packetAnswer && packetAnswer.answers) {
+      packetAnswer.answers.forEach(answer => {
+        const questionIndex = answer.questionIndex;
+        progressMap[questionIndex] = {
+          userAnswer: answer.userAnswer,
+          isCorrect: answer.isCorrect,
+          answeredAt: answer.answeredAt || new Date()
+        };
+        if (answer.isCorrect) totalCorrect++;
+        totalAnswered++;
+      });
+    }
     const isCompleted = totalAnswered === questionPacket.questions.length;
     const allCorrect = totalCorrect === questionPacket.questions.length;
 

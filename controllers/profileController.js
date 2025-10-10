@@ -1,7 +1,56 @@
 import User from '../models/User.js';
+import UserLevel from '../models/UserLevel.js';
+import QuestionPacketAnswer from '../models/QuestionPacketAnswer.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 import bcrypt from 'bcryptjs';
 import cloudinary from '../config/cloudinary.js';
+
+// Calculate overall level for a user
+const calculateUserOverallLevel = async (userId) => {
+  try {
+    // Get all user levels to check branch completions
+    const userLevels = await UserLevel.find({ userId }).populate('branchId', 'name category');
+    
+    // Count completed branches (branches where all 10 levels are completed)
+    const completedBranches = userLevels.filter(userLevel => 
+      userLevel.completedLevels.length === 10
+    );
+
+    // Get completed question packets
+    const completedQuestionPackets = await QuestionPacketAnswer.find({
+      userId,
+      isCompleted: true
+    });
+
+    let overallLevel = 0;
+
+    // Calculate overall level based on the specified flow
+    if (completedBranches.length >= 1) {
+      overallLevel = 1;
+    }
+
+    if (completedBranches.length >= 3) {
+      overallLevel = 2;
+    }
+
+    if (completedBranches.length >= 6) {
+      overallLevel = 3;
+    }
+
+    // After level 3, question packets start counting
+    if (overallLevel >= 3) {
+      const questionPacketLevels = Math.floor(completedQuestionPackets.length / 3);
+      if (questionPacketLevels >= 1) {
+        overallLevel = 3 + questionPacketLevels;
+      }
+    }
+
+    return overallLevel;
+  } catch (error) {
+    console.error('Error calculating overall level:', error);
+    return 0; // Default to 0 if calculation fails
+  }
+};
 
 // Get user profile
 export const getUserProfile = async (req, res) => {
@@ -13,6 +62,9 @@ export const getUserProfile = async (req, res) => {
     if (!user) {
       return sendError(res, 'User not found', 404);
     }
+
+    // Calculate overall level
+    const overallLevel = await calculateUserOverallLevel(userId);
 
     sendSuccess(res, 'Profile retrieved successfully', {
       user: {
@@ -27,7 +79,8 @@ export const getUserProfile = async (req, res) => {
         isEmailVerified: user.isEmailVerified,
         lastLogin: user.lastLogin,
         createdAt: user.createdAt,
-        updatedAt: user.updatedAt
+        updatedAt: user.updatedAt,
+        overallLevel: overallLevel
       }
     });
 

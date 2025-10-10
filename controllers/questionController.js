@@ -669,6 +669,7 @@ export const getUserLevelProgress = async (req, res) => {
 export const getFilteredQuestions = async (req, res) => {
   try {
     const { branchId, level } = req.query;
+    const userId = req.user?.id; // Get user ID from auth middleware if available
     
     // Build filter object
     let filter = { isActive: true };
@@ -701,13 +702,44 @@ export const getFilteredQuestions = async (req, res) => {
     // Get count for pagination info
     const totalCount = await Question.countDocuments(filter);
 
+    // If user is authenticated, fetch their answers for these questions
+    let questionsWithUserAnswers = questions;
+    if (userId) {
+      const questionIds = questions.map(q => q._id);
+      const userAnswers = await UserAnswer.find({
+        userId,
+        questionId: { $in: questionIds }
+      }).lean();
+
+      // Create a map of questionId -> userAnswer for quick lookup
+      const userAnswerMap = {};
+      userAnswers.forEach(answer => {
+        userAnswerMap[answer.questionId.toString()] = answer;
+      });
+
+      // Add user answer data to each question
+      questionsWithUserAnswers = questions.map(question => {
+        const userAnswer = userAnswerMap[question._id.toString()];
+        return {
+          ...question,
+          userAnswer: userAnswer ? {
+            selectedOptionIndex: userAnswer.selectedOptionIndex,
+            isCorrect: userAnswer.isCorrect,
+            pointsEarned: userAnswer.pointsEarned,
+            timeSpent: userAnswer.timeSpent,
+            answeredAt: userAnswer.answeredAt
+          } : null
+        };
+      });
+    }
+
     const response = {
       filters: {
         branchId: branchId || 'all',
         level: level || 'all'
       },
       totalQuestions: totalCount,
-      questions: questions
+      questions: questionsWithUserAnswers
     };
 
     sendSuccess(res, 'Questions retrieved successfully', response);
