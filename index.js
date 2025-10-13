@@ -32,8 +32,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// CORS headers middleware - removed COOP headers from backend API
+// to prevent interference with OAuth popups on frontend
 app.use((req, res, next) => {
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  // Only set COEP if needed, COOP should be handled by frontend
   res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
   next();
 });
