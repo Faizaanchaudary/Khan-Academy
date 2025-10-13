@@ -1,6 +1,7 @@
 import { admin } from '../config/firebase.js';
 import User from '../models/User.js';
 import TokenBlacklist from '../models/TokenBlacklist.js';
+import UserSubscription from '../models/UserSubscription.js';
 
 const verifyFirebaseToken = async (req, res, next) => {
   try {
@@ -195,9 +196,61 @@ const authenticate = async (req, res, next) => {
   }
 };
 
+// Middleware to check if user has an active subscription
+const requireActiveSubscription = async (req, res, next) => {
+  try {
+    // Skip subscription check for admin users
+    if (req.user.role === 'admin') {
+      return next();
+    }
+
+    // Fetch user subscription
+    let userSubscription = await UserSubscription.findOne({ 
+      userId: req.user._id, 
+      status: { $in: ['active', 'trial'] } 
+    });
+
+    // Check if subscription/trial is expired and update status in database
+    if (userSubscription) {
+      const now = new Date();
+      const isExpired = userSubscription.isExpired;
+      const isTrialExpired = userSubscription.isTrialExpired;
+
+      // If subscription or trial is expired, update status to 'expired'
+      if (isExpired || isTrialExpired) {
+        userSubscription.status = 'expired';
+        userSubscription.isTrialActive = false;
+        await userSubscription.save();
+        userSubscription = null; // Set to null since it's now expired
+      }
+    }
+
+    // If no active subscription, return error
+    if (!userSubscription) {
+      return res.status(403).json({
+        success: false,
+        message: 'Active subscription required',
+        requiresSubscription: true,
+        redirectTo: '/choose-plan'
+      });
+    }
+
+    // Attach subscription to request for use in controllers
+    req.userSubscription = userSubscription;
+    next();
+  } catch (error) {
+    console.error('Subscription validation error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error validating subscription'
+    });
+  }
+};
+
 export {
   verifyFirebaseToken,
   verifyJWT,
   optionalAuth,
-  authenticate
+  authenticate,
+  requireActiveSubscription
 };

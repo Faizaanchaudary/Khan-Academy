@@ -8,7 +8,7 @@ import {
   testGeminiAPI,
   testOpenAIAPI
 } from '../controllers/chatController.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireActiveSubscription } from '../middleware/auth.js';
 import { body, param, query, validationResult } from 'express-validator';
 
 const router = express.Router();
@@ -29,18 +29,21 @@ const validateRequest = (req, res, next) => {
 // Test Gemini API
 router.get('/test-gemini',
   authenticate,
+  requireActiveSubscription,
   testGeminiAPI
 );
 
 // Test OpenAI API
 router.get('/test-openai',
   authenticate,
+  requireActiveSubscription,
   testOpenAIAPI
 );
 
 // Get recent chats (must come before /:chatId route)
 router.get('/recent',
   authenticate,
+  requireActiveSubscription,
   [
     query('limit')
       .optional()
@@ -54,6 +57,7 @@ router.get('/recent',
 // Create a new chat (must come before /:chatId route)
 router.post('/new', 
   authenticate,
+  requireActiveSubscription,
   [
     body('message')
       .notEmpty()
@@ -69,6 +73,7 @@ router.post('/new',
 // Send message to existing chat
 router.post('/:chatId/message',
   authenticate,
+  requireActiveSubscription,
   [
     param('chatId')
       .isMongoId()
@@ -87,6 +92,7 @@ router.post('/:chatId/message',
 // Get specific chat by ID
 router.get('/:chatId',
   authenticate,
+  requireActiveSubscription,
   [
     param('chatId')
       .isMongoId()
@@ -99,6 +105,7 @@ router.get('/:chatId',
 // Delete a chat
 router.delete('/:chatId',
   authenticate,
+  requireActiveSubscription,
   [
     param('chatId')
       .isMongoId()

@@ -148,7 +148,24 @@ export const login = async (req, res) => {
     await user.save();
 
     // Fetch user subscription data
-    const userSubscription = await UserSubscription.findOne({ userId: user._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features');
+    let userSubscription = await UserSubscription.findOne({ userId: user._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features');
+
+    // Check if subscription/trial is expired and update status in database
+    if (userSubscription) {
+      const now = new Date();
+      const isExpired = userSubscription.isExpired;
+      const isTrialExpired = userSubscription.isTrialExpired;
+
+      // If subscription or trial is expired, update status to 'expired'
+      if (isExpired || isTrialExpired) {
+        userSubscription.status = 'expired';
+        userSubscription.isTrialActive = false;
+        await userSubscription.save();
+        
+        // Re-fetch to get null since we're now looking for active/trial subscriptions
+        userSubscription = null;
+      }
+    }
 
     const userResponse = user.toObject();
     delete userResponse.password;
@@ -244,7 +261,24 @@ export const googleSignIn = async (req, res) => {
     delete userResponse.resetPasswordOTP;
 
     // Fetch user subscription data for Google sign-in
-    const userSubscription = await UserSubscription.findOne({ userId: user._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features');
+    let userSubscription = await UserSubscription.findOne({ userId: user._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features');
+
+    // Check if subscription/trial is expired and update status in database
+    if (userSubscription) {
+      const now = new Date();
+      const isExpired = userSubscription.isExpired;
+      const isTrialExpired = userSubscription.isTrialExpired;
+
+      // If subscription or trial is expired, update status to 'expired'
+      if (isExpired || isTrialExpired) {
+        userSubscription.status = 'expired';
+        userSubscription.isTrialActive = false;
+        await userSubscription.save();
+        
+        // Re-fetch to get null since we're now looking for active/trial subscriptions
+        userSubscription = null;
+      }
+    }
 
     // Prepare subscription data with trial status
     const subscriptionData = userSubscription ? {
@@ -385,10 +419,28 @@ export const appleSignIn = async (req, res) => {
     delete userResponse.resetPasswordOTP;
 
     // Fetch user subscription data for Apple sign-in
-    const userSubscription = await UserSubscription.findOne({ userId: existingUser._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features');
+    let userSubscription = await UserSubscription.findOne({ userId: existingUser._id, status: { $in: ['active', 'trial'] } }).populate('planId', 'name tagline price currency billingCycle features');
+
+    // Check if subscription/trial is expired and update status in database
+    if (userSubscription) {
+      const now = new Date();
+      const isExpired = userSubscription.isExpired;
+      const isTrialExpired = userSubscription.isTrialExpired;
+
+      // If subscription or trial is expired, update status to 'expired'
+      if (isExpired || isTrialExpired) {
+        userSubscription.status = 'expired';
+        userSubscription.isTrialActive = false;
+        await userSubscription.save();
+        
+        // Re-fetch to get null since we're now looking for active/trial subscriptions
+        userSubscription = null;
+      }
+    }
 
     // Prepare subscription data with trial status
     const subscriptionData = userSubscription ? {
+      hasActiveSubscription: true,
       planId: userSubscription.planId,
       status: userSubscription.status,
       startDate: userSubscription.startDate,
@@ -406,7 +458,11 @@ export const appleSignIn = async (req, res) => {
         trialEndDate: userSubscription.trialEndDate,
         endDate: userSubscription.endDate
       },
-    } : null;
+    } : {
+      hasActiveSubscription: false,
+      reason: 'no_subscription',
+      message: 'User does not have an active subscription'
+    };
 
     res.json({
       success: true,

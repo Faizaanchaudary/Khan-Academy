@@ -7,11 +7,12 @@ import {
   calculateOverallLevel,
   getUserDetailedProgress
 } from '../controllers/levelController.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireActiveSubscription } from '../middleware/auth.js';
 
 const router = express.Router();
 
 router.use(authenticate);
+router.use(requireActiveSubscription);
 
 
 

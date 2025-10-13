@@ -11,7 +11,7 @@ import {
   getAchievementById,
   getBranchBadgeProgress
 } from '../controllers/achievementController.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireActiveSubscription } from '../middleware/auth.js';
 import {
   validateCreateAchievement,
   validateUpdateAchievement,
@@ -23,6 +23,7 @@ import {
 const router = express.Router();
 
 router.use(authenticate);
+router.use(requireActiveSubscription);
 
 
 
