@@ -6,7 +6,8 @@ import {
   getChatById, 
   deleteChat,
   testGeminiAPI,
-  testOpenAIAPI
+  testOpenAIAPI,
+  upload
 } from '../controllers/chatController.js';
 import { authenticate, requireActiveSubscription } from '../middleware/auth.js';
 import { body, param, query, validationResult } from 'express-validator';
@@ -58,6 +59,7 @@ router.get('/recent',
 router.post('/new', 
   authenticate,
   requireActiveSubscription,
+  upload.single('image'),
   [
     body('message')
       .notEmpty()
@@ -74,6 +76,7 @@ router.post('/new',
 router.post('/:chatId/message',
   authenticate,
   requireActiveSubscription,
+  upload.single('image'),
   [
     param('chatId')
       .isMongoId()

@@ -21,15 +21,28 @@ const verifyFirebaseToken = async (req, res, next) => {
     let user = await User.findOne({ firebaseUid: decodedToken.uid });
  
     if (!user) {
-      user = await User.create({
-        firebaseUid: decodedToken.uid,
-        email: decodedToken.email,
-        firstName: decodedToken.name?.split(' ')[0] || 'User',
-        lastName: decodedToken.name?.split(' ').slice(1).join(' ') || '',
-        provider: 'google',
-        isEmailVerified: decodedToken.email_verified || false,
-        profilePicture: decodedToken.picture || null
-      });
+      // Check if user exists with same email
+      user = await User.findOne({ email: decodedToken.email });
+      
+      if (user) {
+        // Link the Google account to existing email/password user
+        user.firebaseUid = decodedToken.uid;
+        user.provider = 'google';
+        user.isEmailVerified = decodedToken.email_verified || user.isEmailVerified;
+        user.profilePicture = decodedToken.picture || user.profilePicture;
+        await user.save();
+      } else {
+        // Create new user if no existing user found
+        user = await User.create({
+          firebaseUid: decodedToken.uid,
+          email: decodedToken.email,
+          firstName: decodedToken.name?.split(' ')[0] || 'User',
+          lastName: decodedToken.name?.split(' ').slice(1).join(' ') || '',
+          provider: 'google',
+          isEmailVerified: decodedToken.email_verified || false,
+          profilePicture: decodedToken.picture || null
+        });
+      }
     }
 
     req.user = user;
@@ -140,15 +153,28 @@ const authenticate = async (req, res, next) => {
       let user = await User.findOne({ firebaseUid: decodedToken.uid });
       
       if (!user) {
-        user = await User.create({
-          firebaseUid: decodedToken.uid,
-          email: decodedToken.email,
-          firstName: decodedToken.name?.split(' ')[0] || 'User',
-          lastName: decodedToken.name?.split(' ').slice(1).join(' ') || '',
-          provider: 'google',
-          isEmailVerified: decodedToken.email_verified || false,
-          profilePicture: decodedToken.picture || null
-        });
+        // Check if user exists with same email
+        user = await User.findOne({ email: decodedToken.email });
+        
+        if (user) {
+          // Link the Google account to existing email/password user
+          user.firebaseUid = decodedToken.uid;
+          user.provider = 'google';
+          user.isEmailVerified = decodedToken.email_verified || user.isEmailVerified;
+          user.profilePicture = decodedToken.picture || user.profilePicture;
+          await user.save();
+        } else {
+          // Create new user if no existing user found
+          user = await User.create({
+            firebaseUid: decodedToken.uid,
+            email: decodedToken.email,
+            firstName: decodedToken.name?.split(' ')[0] || 'User',
+            lastName: decodedToken.name?.split(' ').slice(1).join(' ') || '',
+            provider: 'google',
+            isEmailVerified: decodedToken.email_verified || false,
+            profilePicture: decodedToken.picture || null
+          });
+        }
       }
 
       req.user = user;

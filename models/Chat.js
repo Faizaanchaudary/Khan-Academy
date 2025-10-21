@@ -10,6 +10,14 @@ const messageSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  imageUrl: {
+    type: String,
+    required: false
+  },
+  imageAlt: {
+    type: String,
+    required: false
+  },
   timestamp: {
     type: Date,
     default: Date.now
@@ -51,8 +59,9 @@ chatSchema.virtual('messageCount').get(function() {
 });
 
 // Method to add a message
-chatSchema.methods.addMessage = function(role, content) {
-  this.messages.push({ role, content });
+chatSchema.methods.addMessage = function(role, content, additionalData = {}) {
+  const messageData = { role, content, ...additionalData };
+  this.messages.push(messageData);
   this.lastMessageAt = new Date();
   return this.save();
 };

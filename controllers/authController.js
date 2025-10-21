@@ -233,22 +233,38 @@ export const googleSignIn = async (req, res) => {
     }
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     
+    // First, try to find user by firebaseUid
     let user = await User.findOne({ firebaseUid: decodedToken.uid });
     
+    // If not found by firebaseUid, check if user exists with same email
     if (!user) {
-      user = await User.create({
-        firebaseUid: decodedToken.uid,
-        email: decodedToken.email,
-        firstName: decodedToken.name?.split(' ')[0] || 'User',
-        lastName: decodedToken.name?.split(' ').slice(1).join(' ') || '',
-        provider: 'google',
-        isEmailVerified: decodedToken.email_verified || false,
-        profilePicture: decodedToken.picture || null,
-        role: 'student', // Default to student for Google sign-in
-        lastOnline: new Date()
-      });
+      user = await User.findOne({ email: decodedToken.email });
+      
+      if (user) {
+        // Link the Google account to existing email/password user
+        user.firebaseUid = decodedToken.uid;
+        user.provider = 'google';
+        user.isEmailVerified = decodedToken.email_verified || user.isEmailVerified;
+        user.profilePicture = decodedToken.picture || user.profilePicture;
+        user.lastLogin = new Date();
+        user.lastOnline = new Date();
+        await user.save();
+      } else {
+        // Create new user if no existing user found
+        user = await User.create({
+          firebaseUid: decodedToken.uid,
+          email: decodedToken.email,
+          firstName: decodedToken.name?.split(' ')[0] || 'User',
+          lastName: decodedToken.name?.split(' ').slice(1).join(' ') || '',
+          provider: 'google',
+          isEmailVerified: decodedToken.email_verified || false,
+          profilePicture: decodedToken.picture || null,
+          role: 'student', // Default to student for Google sign-in
+          lastOnline: new Date()
+        });
 
-      // Note: Auto-subscription creation is disabled. Users can subscribe manually if needed.
+        // Note: Auto-subscription creation is disabled. Users can subscribe manually if needed.
+      }
     } else {
       user.lastLogin = new Date();
       user.lastOnline = new Date();

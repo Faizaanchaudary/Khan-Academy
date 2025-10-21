@@ -2,6 +2,42 @@ import Chat from '../models/Chat.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { sendSuccess, sendError } from '../utils/response.js';
 import OpenAI from 'openai';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Configure multer for image uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, '../uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  }
+});
+
+export { upload };
 
 // Initialize AI services
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -10,9 +46,7 @@ const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPE
 // Test function to check if Gemini API is working
 export const testGeminiAPI = async (req, res) => {
   try {
-    console.log('Testing Gemini API...');
-    console.log('API Key exists:', !!process.env.GEMINI_API_KEY);
-    console.log('API Key length:', process.env.GEMINI_API_KEY?.length || 0);
+  
     
     // Try the most basic model
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
@@ -65,7 +99,8 @@ export const testOpenAIAPI = async (req, res) => {
 export const createNewChat = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { message } = req.body;
+    const message = req.body.message;
+    const imageFile = req.file;
 
     if (!message || message.trim().length === 0) {
       return sendError(res, 'Message is required', 400);
@@ -74,18 +109,27 @@ export const createNewChat = async (req, res) => {
     // Generate a title from the first message (first 50 characters)
     const title = message.length > 50 ? message.substring(0, 50) + '...' : message;
 
+    // Create user message object
+    const userMessage = {
+      role: 'user',
+      content: message.trim()
+    };
+
+    // Add image URL if image was uploaded
+    if (imageFile) {
+      userMessage.imageUrl = `/uploads/${imageFile.filename}`;
+      userMessage.imageAlt = imageFile.originalname;
+    }
+
     // Create new chat
     const newChat = new Chat({
       userId,
       title,
-      messages: [{
-        role: 'user',
-        content: message.trim()
-      }]
+      messages: [userMessage]
     });
 
     // Get AI response from available providers
-    const aiResponse = await getAIResponse(message);
+    const aiResponse = await getAIResponse(message, [], imageFile);
     
     // Add AI response to messages
     newChat.messages.push({
@@ -117,7 +161,8 @@ export const sendMessage = async (req, res) => {
   try {
     const userId = req.user._id;
     const { chatId } = req.params;
-    const { message } = req.body;
+    const message = req.body.message;
+    const imageFile = req.file;
 
     if (!message || message.trim().length === 0) {
       return sendError(res, 'Message is required', 400);
@@ -129,11 +174,23 @@ export const sendMessage = async (req, res) => {
       return sendError(res, 'Chat not found', 404);
     }
 
+    // Create user message object
+    const userMessageData = {
+      role: 'user',
+      content: message.trim()
+    };
+
+    // Add image URL if image was uploaded
+    if (imageFile) {
+      userMessageData.imageUrl = `/uploads/${imageFile.filename}`;
+      userMessageData.imageAlt = imageFile.originalname;
+    }
+
     // Add user message
-    await chat.addMessage('user', message.trim());
+    await chat.addMessage('user', message.trim(), userMessageData);
 
     // Get AI response from available providers
-    const aiResponse = await getAIResponse(message, chat.messages);
+    const aiResponse = await getAIResponse(message, chat.messages, imageFile);
 
     // Add AI response
     await chat.addMessage('assistant', aiResponse);
@@ -245,7 +302,7 @@ export const deleteChat = async (req, res) => {
 };
 
 // Helper function to get AI response from multiple providers
-const getAIResponse = async (userMessage, chatHistory = []) => {
+const getAIResponse = async (userMessage, chatHistory = [], imageFile = null) => {
   // Debug: Check API keys
   console.log('OpenAI API Key exists:', !!process.env.OPENAI_API_KEY);
   console.log('OpenAI API Key length:', process.env.OPENAI_API_KEY?.length || 0);
@@ -264,7 +321,10 @@ const getAIResponse = async (userMessage, chatHistory = []) => {
       - Clear and well-structured
       - Encouraging and supportive
       - Formatted nicely with proper numbering for lists
-      - Include tips when appropriate`;
+      - Include tips when appropriate
+      - When asked for practice questions, generate ACTUAL specific questions with problems to solve
+      - Do NOT give generic study advice when specific questions are requested
+      - Always provide the exact number of questions requested`;
       
       // Add recent conversation history for context
       const messages = [
@@ -334,6 +394,11 @@ const getAIResponse = async (userMessage, chatHistory = []) => {
     - Encouraging and supportive
     - Formatted nicely with proper numbering for lists
     - Include tips when appropriate
+    - When asked for practice questions, generate ACTUAL specific questions with problems to solve
+    - Do NOT give generic study advice when specific questions are requested
+    - Always provide the exact number of questions requested
+    - When analyzing images, provide detailed explanations and solutions
+    - For math problems in images, solve step by step and explain the process
     
     Current user message: ${userMessage}`;
 
@@ -347,9 +412,40 @@ const getAIResponse = async (userMessage, chatHistory = []) => {
       conversationContext += `\n\nRecent conversation:\n${historyContext}`;
     }
 
-    const result = await model.generateContent(conversationContext);
-    const response = await result.response;
-    return response.text();
+    // Handle image analysis if image is provided
+    if (imageFile) {
+      try {
+        // For Gemini, we can use vision models
+        const visionModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        
+        // Read image file
+        const imageBuffer = fs.readFileSync(imageFile.path);
+        const imageBase64 = imageBuffer.toString('base64');
+        
+        const result = await visionModel.generateContent([
+          conversationContext,
+          {
+            inlineData: {
+              data: imageBase64,
+              mimeType: imageFile.mimetype
+            }
+          }
+        ]);
+        
+        const response = await result.response;
+        return response.text();
+      } catch (visionError) {
+        console.log('Vision model failed, falling back to text-only:', visionError.message);
+        // Fall back to text-only response
+        const result = await model.generateContent(conversationContext + '\n\nNote: An image was uploaded but could not be processed. Please describe what you need help with.');
+        const response = await result.response;
+        return response.text();
+      }
+    } else {
+      const result = await model.generateContent(conversationContext);
+      const response = await result.response;
+      return response.text();
+    }
 
   } catch (error) {
     console.error('All AI services failed:', error);
@@ -362,6 +458,12 @@ const getAIResponse = async (userMessage, chatHistory = []) => {
 // Fallback educational responses when AI is unavailable
 const getEducationalFallbackResponse = (userMessage) => {
   const message = userMessage.toLowerCase();
+  
+  // Generate specific algebra practice questions
+  if (message.includes('algebra') && (message.includes('practice') || message.includes('question'))) {
+    const questionCount = extractNumber(message) || 1;
+    return generateAlgebraQuestions(questionCount);
+  }
   
   // Math-related responses
   if (message.includes('algebra') || message.includes('math') || message.includes('equation')) {
@@ -459,4 +561,78 @@ What subject are you working on? I can provide more specific guidance!`;
 - Ask questions when confused
 
 What would you like to learn about today? I'll do my best to help even without the AI assistant!`;
+};
+
+// Helper function to extract number from message
+const extractNumber = (message) => {
+  const numbers = message.match(/\d+/g);
+  return numbers ? parseInt(numbers[0]) : null;
+};
+
+// Helper function to generate algebra practice questions
+const generateAlgebraQuestions = (count) => {
+  const questions = [
+    {
+      problem: "Solve for x: 2x + 5 = 13",
+      solution: "x = 4",
+      steps: "Subtract 5 from both sides: 2x = 8, then divide by 2: x = 4"
+    },
+    {
+      problem: "Solve for x: 3x - 7 = 14",
+      solution: "x = 7",
+      steps: "Add 7 to both sides: 3x = 21, then divide by 3: x = 7"
+    },
+    {
+      problem: "Solve for x: 4x + 3 = 2x + 11",
+      solution: "x = 4",
+      steps: "Subtract 2x from both sides: 2x + 3 = 11, then subtract 3: 2x = 8, divide by 2: x = 4"
+    },
+    {
+      problem: "Solve for x: x² - 5x + 6 = 0",
+      solution: "x = 2 or x = 3",
+      steps: "Factor: (x - 2)(x - 3) = 0, so x = 2 or x = 3"
+    },
+    {
+      problem: "Solve for x: 2(x + 3) = 4x - 2",
+      solution: "x = 4",
+      steps: "Distribute: 2x + 6 = 4x - 2, subtract 2x: 6 = 2x - 2, add 2: 8 = 2x, divide by 2: x = 4"
+    },
+    {
+      problem: "Solve for x: (x + 1)/2 = 3",
+      solution: "x = 5",
+      steps: "Multiply both sides by 2: x + 1 = 6, subtract 1: x = 5"
+    },
+    {
+      problem: "Solve for x: 5x - 3 = 2x + 9",
+      solution: "x = 4",
+      steps: "Subtract 2x: 3x - 3 = 9, add 3: 3x = 12, divide by 3: x = 4"
+    },
+    {
+      problem: "Solve for x: x² + 2x - 8 = 0",
+      solution: "x = 2 or x = -4",
+      steps: "Factor: (x - 2)(x + 4) = 0, so x = 2 or x = -4"
+    },
+    {
+      problem: "Solve for x: 3(x - 2) = 2x + 1",
+      solution: "x = 7",
+      steps: "Distribute: 3x - 6 = 2x + 1, subtract 2x: x - 6 = 1, add 6: x = 7"
+    },
+    {
+      problem: "Solve for x: (2x - 1)/3 = 5",
+      solution: "x = 8",
+      steps: "Multiply by 3: 2x - 1 = 15, add 1: 2x = 16, divide by 2: x = 8"
+    }
+  ];
+
+  const selectedQuestions = questions.slice(0, Math.min(count, questions.length));
+  
+  let response = `Here are ${selectedQuestions.length} Algebra practice question${selectedQuestions.length > 1 ? 's' : ''} for you:\n\n`;
+  
+  selectedQuestions.forEach((q, index) => {
+    response += `${index + 1}. ${q.problem}\n`;
+  });
+  
+  response += `\n💡 **Tip:** Try solving each step by step. Once you're done, type 'Show answers' and I'll check your work! ✔`;
+  
+  return response;
 };
