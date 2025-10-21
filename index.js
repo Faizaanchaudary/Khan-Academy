@@ -28,17 +28,52 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// CORS configuration
+const corsOptions = {
+  origin: [
+    'https://khan-academy-frontend.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://khan-academy-frontend-git-main.vercel.app', // Vercel preview deployments
+    'https://khan-academy-frontend-*.vercel.app' // Wildcard for all Vercel deployments
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+    'Cache-Control',
+    'Pragma'
+  ],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  optionsSuccessStatus: 200 // For legacy browser support
+};
+
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve uploaded images statically
 app.use('/uploads', express.static('uploads'));
 
+// Handle preflight requests explicitly
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, Pragma');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400'); // 24 hours
+  res.sendStatus(200);
+});
 
+// Security headers
 app.use((req, res, next) => {
-
   res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   next();
 });
 
@@ -52,7 +87,24 @@ app.get('/', (req, res) => {
   });
 });
 
-app.use('/api/auth', authRoutes);
+// Special CORS handling for auth routes
+app.use('/api/auth', (req, res, next) => {
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    'https://khan-academy-frontend.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://khan-academy-frontend-git-main.vercel.app'
+  ];
+  
+  if (allowedOrigins.includes(origin) || origin?.includes('vercel.app')) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, Pragma');
+  }
+  next();
+}, authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/questions', questionRoutes);
