@@ -33,6 +33,14 @@ const questionSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  image: {
+    type: String,
+    trim: true
+  },
+  questionContent: {
+    type: String,
+    trim: true
+  },
   options: [{
     optionText: {
       type: String,
