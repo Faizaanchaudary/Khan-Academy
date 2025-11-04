@@ -93,3 +93,40 @@ export const uploadMultipleTeamMemberImages = async (imageBuffers, teamMemberNam
     throw new Error(`Failed to upload multiple team member images: ${error.message}`);
   }
 };
+
+/**
+ * Upload question image to Cloudinary
+ * @param {Buffer} imageBuffer - Image buffer from multer
+ * @param {string} branchId - Branch ID for folder organization
+ * @returns {Promise<Object>} Cloudinary upload result
+ */
+export const uploadQuestionImage = async (imageBuffer, branchId) => {
+  try {
+    // Create a unique folder path for question images
+    const folderPath = `khan-academy/questions/${branchId}`;
+    
+    return new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream(
+        {
+          folder: folderPath,
+          resource_type: 'image',
+          transformation: [
+            { quality: 'auto', fetch_format: 'auto' }
+          ],
+          public_id: `question-${Date.now()}`
+        },
+        (error, result) => {
+          if (error) {
+            console.error('Cloudinary upload error:', error);
+            reject(new Error(`Cloudinary upload error: ${error.message}`));
+          } else {
+            resolve(result);
+          }
+        }
+      ).end(imageBuffer);
+    });
+  } catch (error) {
+    console.error('Question image upload error:', error);
+    throw new Error(`Failed to upload question image: ${error.message}`);
+  }
+};

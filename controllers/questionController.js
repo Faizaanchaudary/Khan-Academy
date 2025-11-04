@@ -111,6 +111,48 @@ export const getAllQuestions = async (req, res) => {
   }
 };
 
+export const getQuestionCount = async (req, res) => {
+  try {
+    const { branchId, level } = req.query;
+    
+    if (!branchId) {
+      return sendError(res, 'Branch ID is required', 400);
+    }
+
+    if (!level) {
+      return sendError(res, 'Level is required', 400);
+    }
+
+    const levelNum = parseInt(level, 10);
+    if (isNaN(levelNum) || levelNum < 1 || levelNum > 10) {
+      return sendError(res, 'Invalid level. Must be between 1 and 10', 400);
+    }
+
+    // Verify branch exists
+    const branch = await Branch.findById(branchId);
+    if (!branch) {
+      return sendError(res, 'Branch not found', 404);
+    }
+
+    const count = await Question.countDocuments({
+      branchId,
+      level: levelNum,
+      isActive: true
+    });
+
+    sendSuccess(res, 'Question count retrieved successfully', { 
+      branchId,
+      level: levelNum,
+      count,
+      maxQuestions: 10,
+      remaining: Math.max(0, 10 - count)
+    });
+  } catch (error) {
+    console.error('Get question count error:', error);
+    sendError(res, 'Internal server error while retrieving question count');
+  }
+};
+
 export const getQuestionsByBranch = async (req, res) => {
   try {
     const { branchId } = req.params;
@@ -194,15 +236,29 @@ export const getQuestionById = async (req, res) => {
 
 export const createQuestion = async (req, res) => {
   try {
-    const { 
+    let { 
       branchId, 
       level,
       questionText, 
       equation, 
+      questionContent,
       options, 
       correctAnswerIndex, 
       correctAnswerExplanation
     } = req.body;
+
+    // Handle image upload if present
+    let imageUrl = null;
+    if (req.file) {
+      try {
+        const { uploadQuestionImage } = await import('../utils/cloudinaryUtils.js');
+        const uploadResult = await uploadQuestionImage(req.file.buffer, branchId);
+        imageUrl = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error('Image upload error:', uploadError);
+        return sendError(res, 'Failed to upload image', 500);
+      }
+    }
 
     // Validation
     if (!branchId || !questionText || !options || correctAnswerIndex === undefined || !level) {
@@ -226,16 +282,64 @@ export const createQuestion = async (req, res) => {
       return sendError(res, 'Branch not found', 404);
     }
 
-    // Get question number for this specific level
-    const questionNumber = await Question.countDocuments({ branchId, level }) + 1;
+    // Check the count of ACTIVE questions for this branch and level
+    const activeQuestionCount = await Question.countDocuments({ 
+      branchId, 
+      level, 
+      isActive: true 
+    });
+    
+    // Check the count of ALL questions (active and inactive) for this branch and level
+    const totalQuestionCount = await Question.countDocuments({ 
+      branchId, 
+      level 
+    });
+    
+    // Ensure we don't exceed the maximum (10 questions per level)
+    // We check both active count and total count
+    if (activeQuestionCount >= 10) {
+      return sendError(res, 'Maximum of 10 active questions per level reached for this branch and level', 400);
+    }
+    
+    if (totalQuestionCount >= 10) {
+      return sendError(res, 'All question number slots (1-10) are occupied for this branch and level. Please delete or reactivate an existing question first.', 400);
+    }
+
+    // Find the next available question number
+    // Note: We check ALL questions (including inactive) because the unique constraint
+    // applies to all questions, not just active ones
+    let finalQuestionNumber = null;
+    
+    // Check each number from 1 to 10 to find the first available slot
+    for (let num = 1; num <= 10; num++) {
+      const existingQuestion = await Question.findOne({
+        branchId,
+        level,
+        questionNumber: num
+        // Check ALL questions (active and inactive) due to unique constraint
+      });
+      
+      if (!existingQuestion) {
+        // Found an available slot
+        finalQuestionNumber = num;
+        break;
+      }
+    }
+    
+    // If no available slot found
+    if (!finalQuestionNumber) {
+      return sendError(res, 'All question number slots (1-10) are occupied for this branch and level. Please delete an existing question first.', 400);
+    }
 
     const question = new Question({
       branchId,
       category: branch.category,
       level,
-      questionNumber,
+      questionNumber: finalQuestionNumber, // Use the available slot we found
       questionText,
       equation,
+      questionContent,
+      image: imageUrl,
       options: options.map((option, index) => ({
         optionText: option,
         isCorrect: index === correctAnswerIndex
@@ -253,7 +357,7 @@ export const createQuestion = async (req, res) => {
   } catch (error) {
     console.error('Create question error:', error);
     if (error.code === 11000) {
-      return sendError(res, 'A question with this branch, level, and question number already exists', 400);
+      return sendError(res, 'A question with this branch, level, and question number already exists. Please try again.', 400);
     }
     sendError(res, 'Internal server error while creating question');
   }

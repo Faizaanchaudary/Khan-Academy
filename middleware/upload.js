@@ -27,4 +27,7 @@ export const uploadTeamMemberImageFile = upload.single('image');
 // Middleware for multiple files (if needed in future)
 export const uploadMultipleFiles = upload.array('media', 10);
 
+// Middleware for question image upload
+export const uploadQuestionImage = upload.single('image');
+
 export default upload;
