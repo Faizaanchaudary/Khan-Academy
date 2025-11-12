@@ -1,11 +1,11 @@
 {
   "name": "SDK-backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "app.js",
   "type": "module",
   "scripts": {
-    "start": "nodemon index.js",
-    "dev": "nodemon index.js",
+    "start": "nodemon app.js",
+    "dev": "nodemon app.js",
     "test": "node test-firebase.js",
     "test:api": "node test-firebase.js",
     "token": "node simple-token-generator.js",
