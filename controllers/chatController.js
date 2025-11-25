@@ -1,5 +1,4 @@
 import Chat from '../models/Chat.js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { sendSuccess, sendError } from '../utils/response.js';
 import OpenAI from 'openai';
 import multer from 'multer';
@@ -9,6 +8,10 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Response tuning constants (can be overridden via env)
+const MAX_HISTORY_MESSAGES = parseInt(process.env.CHATBOT_HISTORY_LIMIT ?? '6', 10);
+const MAX_COMPLETION_TOKENS = parseInt(process.env.CHATBOT_MAX_TOKENS ?? '700', 10);
 
 // Configure multer for image uploads
 const storage = multer.diskStorage({
@@ -39,55 +42,52 @@ const upload = multer({
 
 export { upload };
 
-// Initialize AI services
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+// Initialize OpenAI client
+if (!process.env.OPENAI_API_KEY) {
+  console.error('ERROR: OPENAI_API_KEY is not set in environment variables');
+  throw new Error('OpenAI API key is required. Please set OPENAI_API_KEY in your .env file');
+}
 
-// Test function to check if Gemini API is working
-export const testGeminiAPI = async (req, res) => {
-  try {
-  
-    
-    // Try the most basic model
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-    const result = await model.generateContent("Hello, can you respond with just 'Hello'?");
-    const response = await result.response;
-    const text = response.text();
-    
-    return sendSuccess(res, 'Gemini API test successful', { 
-      response: text,
-      model: 'gemini-pro'
-    });
-  } catch (error) {
-    console.error('Gemini API test failed:', error);
-    return sendError(res, `Gemini API test failed: ${error.message}`, 500);
-  }
-};
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Optimized system prompt for consistent, token-efficient responses
+const SYSTEM_PROMPT = `You are Gnosis AI, a professional educational assistant for students.
+
+Core Principles:
+1) Provide clear, accurate, and helpful educational content
+2) Generate actual practice questions when requested (not generic advice)
+3) Use concise, well-structured responses
+4) Format lists with numbering like "1)" and simple bullet dashes (-)
+5) Be encouraging and supportive
+
+Response Guidelines:
+- For practice questions: Generate the exact number requested with specific problems
+- For explanations: Provide step-by-step solutions
+- For images: Analyze and explain thoroughly
+- Keep responses focused, avoid unnecessary verbosity
+- Use plain text only (no markdown headings, no **bold**, no # or code fences)`;
 
 // Test function to check if OpenAI API is working
 export const testOpenAIAPI = async (req, res) => {
   try {
-    console.log('Testing OpenAI API...');
-    console.log('OpenAI API Key exists:', !!process.env.OPENAI_API_KEY);
-    console.log('OpenAI API Key length:', process.env.OPENAI_API_KEY?.length || 0);
-    
-    if (!openai || !process.env.OPENAI_API_KEY) {
+    if (!process.env.OPENAI_API_KEY) {
       return sendError(res, 'OpenAI API key not configured', 400);
     }
     
     const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "You are a helpful assistant." },
+        { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: "Hello, can you respond with just 'Hello'?" }
       ],
       max_tokens: 50,
-      temperature: 0.7
+      temperature: 0.3
     });
     
     return sendSuccess(res, 'OpenAI API test successful', { 
       response: completion.choices[0].message.content,
-      model: 'gpt-3.5-turbo'
+      model: 'gpt-4o-mini',
+      usage: completion.usage
     });
   } catch (error) {
     console.error('OpenAI API test failed:', error);
@@ -301,156 +301,103 @@ export const deleteChat = async (req, res) => {
   }
 };
 
-// Helper function to get AI response from multiple providers
+// Helper function to get AI response using OpenAI
 const getAIResponse = async (userMessage, chatHistory = [], imageFile = null) => {
-  // Debug: Check API keys
-  console.log('OpenAI API Key exists:', !!process.env.OPENAI_API_KEY);
-  console.log('OpenAI API Key length:', process.env.OPENAI_API_KEY?.length || 0);
-  console.log('Gemini API Key exists:', !!process.env.GEMINI_API_KEY);
-  
-  // Try OpenAI first if available
-  if (openai && process.env.OPENAI_API_KEY) {
-    try {
-      console.log('Attempting to use OpenAI GPT-3.5-turbo...');
-      
-      // Build conversation context
-      let conversationContext = `You are Gnosis AI, an educational AI assistant that helps students with practice questions, explanations, and learning. 
-      
-      Your responses should be:
-      - Educational and helpful
-      - Clear and well-structured
-      - Encouraging and supportive
-      - Formatted nicely with proper numbering for lists
-      - Include tips when appropriate
-      - When asked for practice questions, generate ACTUAL specific questions with problems to solve
-      - Do NOT give generic study advice when specific questions are requested
-      - Always provide the exact number of questions requested`;
-      
-      // Add recent conversation history for context
-      const messages = [
-        { role: "system", content: conversationContext }
-      ];
-      
-      if (chatHistory.length > 0) {
-        const recentMessages = chatHistory.slice(-10);
-        recentMessages.forEach(msg => {
+  try {
+    // Build messages array with system prompt
+    const messages = [
+      { role: "system", content: SYSTEM_PROMPT }
+    ];
+    
+    // Add recent conversation history (limited for token efficiency)
+    if (chatHistory.length > 0) {
+      const recentMessages = chatHistory.slice(-MAX_HISTORY_MESSAGES);
+      recentMessages.forEach(msg => {
+        // Skip messages with images in history to save tokens
+        if (!msg.imageUrl) {
           messages.push({
             role: msg.role === 'user' ? 'user' : 'assistant',
             content: msg.content
           });
-        });
-      }
-      
-      messages.push({ role: "user", content: userMessage });
-      
-      const completion = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: messages,
-        max_tokens: 1000,
-        temperature: 0.7
-      });
-      
-      return completion.choices[0].message.content;
-    } catch (error) {
-      console.log('OpenAI failed:', error.message);
-    }
-  }
-  
-  // Fallback to Gemini if OpenAI fails or is not available
-  try {
-    console.log('Attempting to use Gemini...');
-    
-    // Check if API key is available
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY is not set');
-    }
-    
-    // Try different Gemini model names in order of preference
-    let model;
-    try {
-      console.log('Attempting to use gemini-1.5-flash model...');
-      model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    } catch (error) {
-      console.log('gemini-1.5-flash failed, trying gemini-1.5-pro...');
-      try {
-        model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-      } catch (proError) {
-        console.log('gemini-1.5-pro failed, trying gemini-1.0-pro...');
-        try {
-          model = genAI.getGenerativeModel({ model: "gemini-1.0-pro" });
-        } catch (v1Error) {
-          console.log('gemini-1.0-pro failed, trying gemini-pro...');
-          model = genAI.getGenerativeModel({ model: "gemini-pro" });
         }
-      }
+      });
     }
-
-    // Build conversation context
-    let conversationContext = `You are Gnosis AI, an educational AI assistant that helps students with practice questions, explanations, and learning. 
     
-    Your responses should be:
-    - Educational and helpful
-    - Clear and well-structured
-    - Encouraging and supportive
-    - Formatted nicely with proper numbering for lists
-    - Include tips when appropriate
-    - When asked for practice questions, generate ACTUAL specific questions with problems to solve
-    - Do NOT give generic study advice when specific questions are requested
-    - Always provide the exact number of questions requested
-    - When analyzing images, provide detailed explanations and solutions
-    - For math problems in images, solve step by step and explain the process
-    
-    Current user message: ${userMessage}`;
-
-    // Add recent conversation history for context (last 10 messages)
-    if (chatHistory.length > 0) {
-      const recentMessages = chatHistory.slice(-10);
-      const historyContext = recentMessages.map(msg => 
-        `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
-      ).join('\n');
-      
-      conversationContext += `\n\nRecent conversation:\n${historyContext}`;
-    }
-
     // Handle image analysis if image is provided
     if (imageFile) {
       try {
-        // For Gemini, we can use vision models
-        const visionModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        
-        // Read image file
+        // Read and encode image
         const imageBuffer = fs.readFileSync(imageFile.path);
         const imageBase64 = imageBuffer.toString('base64');
         
-        const result = await visionModel.generateContent([
-          conversationContext,
-          {
-            inlineData: {
-              data: imageBase64,
-              mimeType: imageFile.mimetype
+        // Add user message with image
+        messages.push({
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: userMessage || "Please analyze this image and help me understand it."
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${imageFile.mimetype};base64,${imageBase64}`
+              }
             }
-          }
-        ]);
+          ]
+        });
         
-        const response = await result.response;
-        return response.text();
-      } catch (visionError) {
-        console.log('Vision model failed, falling back to text-only:', visionError.message);
-        // Fall back to text-only response
-        const result = await model.generateContent(conversationContext + '\n\nNote: An image was uploaded but could not be processed. Please describe what you need help with.');
-        const response = await result.response;
-        return response.text();
+        // Use gpt-4o-mini for vision (supports images, cost-effective)
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: messages,
+          max_tokens: MAX_COMPLETION_TOKENS,
+          temperature: 0.25
+        });
+        
+        return sanitizeAIResponse(completion.choices[0].message.content);
+      } catch (imageError) {
+        console.error('Image processing error:', imageError);
+        // Fall back to text-only - continue to text processing below
+        messages.push({ role: "user", content: userMessage || "An image was uploaded but could not be processed. Please describe what you need help with." });
       }
     } else {
-      const result = await model.generateContent(conversationContext);
-      const response = await result.response;
-      return response.text();
+      // Text-only message
+      messages.push({ role: "user", content: userMessage });
     }
-
-  } catch (error) {
-    console.error('All AI services failed:', error);
     
-    // Return a helpful educational response based on common requests
+    // Use gpt-4o-mini for optimal balance of quality, speed, and cost
+    // This handles both text-only and fallback from image errors
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: messages,
+      max_tokens: MAX_COMPLETION_TOKENS, // Optimized token limit
+      temperature: 0.25, // Lower temperature for consistent, professional responses
+      top_p: 0.85, // Slightly lower nucleus sampling for reliability
+    });
+    
+    const response = completion.choices[0].message.content;
+    
+    // Log token usage for monitoring
+    if (completion.usage) {
+      console.log(`Token usage - Prompt: ${completion.usage.prompt_tokens}, Completion: ${completion.usage.completion_tokens}, Total: ${completion.usage.total_tokens}`);
+    }
+    
+    return sanitizeAIResponse(response);
+    
+  } catch (error) {
+    console.error('OpenAI API error:', error);
+    
+    // Handle specific OpenAI errors
+    if (error.status === 401) {
+      throw new Error('Invalid OpenAI API key. Please check your OPENAI_API_KEY environment variable.');
+    } else if (error.status === 429) {
+      throw new Error('OpenAI API rate limit exceeded. Please try again in a moment.');
+    } else if (error.status === 500) {
+      throw new Error('OpenAI API server error. Please try again later.');
+    }
+    
+    // Fallback to educational response
     return getEducationalFallbackResponse(userMessage);
   }
 };
@@ -635,4 +582,13 @@ const generateAlgebraQuestions = (count) => {
   response += `\n💡 **Tip:** Try solving each step by step. Once you're done, type 'Show answers' and I'll check your work! ✔`;
   
   return response;
+};
+
+// Remove Markdown artifacts that the frontend doesn't render
+const sanitizeAIResponse = (text = '') => {
+  return text
+    .replace(/^\s*#+\s*/gm, '')        // Remove heading markers
+    .replace(/\*\*/g, '')              // Remove bold markers
+    .replace(/`{1,3}/g, '')            // Remove inline/code fences
+    .trim();
 };

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "nodemon app.js",
-    "dev": "nodemon app.js",
+    "dev": "node app.js",
     "test": "node test-firebase.js",
     "test:api": "node test-firebase.js",
     "token": "node simple-token-generator.js",

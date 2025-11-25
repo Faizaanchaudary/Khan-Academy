@@ -25,7 +25,7 @@ import dashboardRoutes from './routes/dashboard.js';
 
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8081;
 
 
 // CORS configuration
@@ -33,6 +33,7 @@ const corsOptions = {
   origin: [
     'https://khan-academy-frontend.vercel.app',
     'https://main.d2ufsd6814v2kq.amplifyapp.com',
+    'http://localhost:3000',
     'https://main.d2ufsd6814v2kq.amplifyapp.com/',
     'https://khan-academy-frontend-git-main.vercel.app', // Vercel preview deployments
     'https://khan-academy-frontend-*.vercel.app' // Wildcard for all Vercel deployments

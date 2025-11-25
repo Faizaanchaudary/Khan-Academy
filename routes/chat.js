@@ -5,7 +5,6 @@ import {
   getRecentChats, 
   getChatById, 
   deleteChat,
-  testGeminiAPI,
   testOpenAIAPI,
   upload
 } from '../controllers/chatController.js';
@@ -26,13 +25,6 @@ const validateRequest = (req, res, next) => {
   }
   next();
 };
-
-// Test Gemini API
-router.get('/test-gemini',
-  authenticate,
-  requireActiveSubscription,
-  testGeminiAPI
-);
 
 // Test OpenAI API
 router.get('/test-openai',
